@@ -1,0 +1,577 @@
+#!/usr/bin/env python3
+"""Doubao-style UI: history · modes · image OCR upload · Enter to send."""
+
+from __future__ import annotations
+
+import html
+import json
+import os
+import re
+import sys
+import threading
+import traceback
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.apps.modes import DEFAULT_MODE, UI_MODES, get_app_mode
+
+SESSIONS: dict[str, dict] = {}
+CURRENT_ID = ""
+MODE = DEFAULT_MODE
+READY = False
+LOADING = False
+LOAD_ERROR = ""
+ORCH = None
+UPLOAD_DIR: Path | None = None
+_lock = threading.Lock()
+_MODE_IDS = {m.id for m in UI_MODES}
+
+
+class LazyVectorStore:
+    def __init__(self, settings) -> None:
+        self._settings = settings
+        self._inner = None
+        self._lock = threading.Lock()
+
+    def _get(self):
+        if self._inner is not None:
+            return self._inner
+        with self._lock:
+            if self._inner is not None:
+                return self._inner
+            from src.rag.store import VectorStore
+
+            print("[boot] loading knowledge base embedder (background/first use)...", flush=True)
+            store = VectorStore(self._settings)
+            sample = self._settings.resolve(self._settings.paths.sample_docs)
+            store.ensure_sample_docs(sample)
+            self._inner = store
+            print("[boot] knowledge base ready", flush=True)
+            return self._inner
+
+    def warm(self) -> None:
+        try:
+            self._get()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[boot] kb warm failed: {exc}", flush=True)
+
+    def search(self, *args, **kwargs):
+        return self._get().search(*args, **kwargs)
+
+    def count(self) -> int:
+        return self._get().count()
+
+    def add_directory(self, *args, **kwargs):
+        return self._get().add_directory(*args, **kwargs)
+
+    def add_file(self, *args, **kwargs):
+        return self._get().add_file(*args, **kwargs)
+
+
+def _new_session(mode: str = DEFAULT_MODE) -> str:
+    global CURRENT_ID, MODE
+    sid = uuid.uuid4().hex[:8]
+    MODE = mode if mode in _MODE_IDS else DEFAULT_MODE
+    SESSIONS[sid] = {"title": "新对话", "mode": MODE, "messages": []}
+    CURRENT_ID = sid
+    return sid
+
+
+def _ensure_session() -> str:
+    global CURRENT_ID
+    if CURRENT_ID and CURRENT_ID in SESSIONS:
+        return CURRENT_ID
+    return _new_session(MODE)
+
+
+def _load_runtime() -> None:
+    global READY, LOADING, LOAD_ERROR, ORCH, UPLOAD_DIR
+    with _lock:
+        if READY or LOADING:
+            return
+        LOADING = True
+    try:
+        from src.agent.agent import PrivateAgent
+        from src.agent.multi_agent import MultiAgentOrchestrator
+        from src.agent.tools import ToolRegistry
+        from src.config import load_settings
+        from src.llm.backend import build_llm
+        from src.memory.memory import SessionMemory
+        from src.privacy.audit import AuditTrail
+        from src.skills import SkillRegistry
+
+        settings = load_settings()
+        UPLOAD_DIR = settings.resolve(settings.paths.upload_dir)
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        memory = SessionMemory(settings.resolve(settings.agent.memory_path))
+        skills = SkillRegistry(settings.resolve(settings.paths.generated_projects))
+        audit = AuditTrail(settings.resolve("data/memory/audit.jsonl"))
+
+        print("[boot] loading local model on Radeon/ROCm...", flush=True)
+        llm = build_llm(settings.llm)
+
+        store = LazyVectorStore(settings)
+        tools = ToolRegistry(store, memory, UPLOAD_DIR, skill_registry=skills)
+        agent = PrivateAgent(llm, tools, memory, settings.agent.max_steps, audit=audit)
+        ORCH = MultiAgentOrchestrator(agent, tools)
+        READY = True
+        print("[boot] ready (chat/vision available; KB warms in background)", flush=True)
+        threading.Thread(target=store.warm, daemon=True).start()
+    except Exception:  # noqa: BLE001
+        LOAD_ERROR = traceback.format_exc()
+        print("[boot] failed:\n", LOAD_ERROR)
+    finally:
+        LOADING = False
+
+
+def ensure_runtime_async() -> None:
+    if READY or LOADING:
+        return
+    threading.Thread(target=_load_runtime, daemon=True).start()
+
+
+def suggestions_for(mode: str) -> list[str]:
+    m = get_app_mode(mode)
+    if m:
+        return list(m.demo_prompts)
+    return ["你好，介绍一下你自己", "解析刚上传的图片", "帮我润色一句话"]
+
+
+def _save_upload(filename: str, data: bytes) -> Path:
+    assert UPLOAD_DIR is not None
+    safe = re.sub(r"[^\w.\-]+", "_", Path(filename).name) or f"img_{uuid.uuid4().hex[:8]}.png"
+    path = UPLOAD_DIR / safe
+    path.write_bytes(data)
+    return path
+
+
+def page(notice: str = "", q: str = "") -> bytes:
+    sid = _ensure_session()
+    sess = SESSIONS[sid]
+    mode = sess.get("mode") or MODE
+    m = get_app_mode(mode)
+    title = m.title if m else "对话"
+    messages = sess.get("messages") or []
+
+    hist_items = []
+    for s_id, s in reversed(list(SESSIONS.items())):
+        on = " on" if s_id == sid else ""
+        label = html.escape(s.get("title") or "新对话")
+        hist_items.append(f'<a class="nav{on}" href="/?sid={s_id}">{label}</a>')
+    if not hist_items:
+        hist_items.append('<div class="nav muted">暂无对话记录</div>')
+
+    if not READY:
+        status = notice or ("模型加载中，请稍候自动刷新…" if LOADING else "正在准备模型…")
+        if LOAD_ERROR:
+            status = "模型加载失败：\n" + LOAD_ERROR
+        stage = f'<div class="hero"><h1>PrivateLocalAgent</h1><p>{html.escape(status)}</p></div>'
+    elif messages:
+        rows = []
+        for item in messages:
+            u = item[0] if isinstance(item, (list, tuple)) else item.get("q", "")
+            a = item[1] if isinstance(item, (list, tuple)) else item.get("a", "")
+            rows.append(f'<div class="row user"><div class="bubble user">{html.escape(u)}</div></div>')
+            rows.append(f'<div class="row bot"><div class="bubble bot">{html.escape(a)}</div></div>')
+        stage = f'<div class="chat" id="chat">{"".join(rows)}</div>'
+    else:
+        chips = "".join(
+            f'<button type="button" class="sug" data-q="{html.escape(s, quote=True)}">{html.escape(s)}</button>'
+            for s in suggestions_for(mode)
+        )
+        hint = "可上传图片做本地 OCR 图文解析" if mode == "vision" else "本地 Radeon 推理"
+        stage = f"""
+        <div class="hero">
+          <h1>有什么我能帮你的吗？</h1>
+          <p>PrivateLocalAgent · {html.escape(title)} · {hint}</p>
+          <div class="sugs">{chips}</div>
+        </div>"""
+
+    mode_bar = []
+    for app in UI_MODES:
+        on = " on" if app.id == mode else ""
+        mode_bar.append(
+            f'<a class="skill{on}" href="/?sid={sid}&mode={html.escape(app.id)}">{html.escape(app.title)}</a>'
+        )
+
+    disabled = "disabled" if not READY else ""
+    refresh = "" if READY or LOAD_ERROR else '<meta http-equiv="refresh" content="3"/>'
+    body = f"""<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PrivateLocalAgent</title>
+{refresh}
+<style>
+:root {{
+  --bg:#f4f6f8; --panel:#fff; --line:#e6ebf0; --text:#1f2329; --muted:#8a9199;
+  --accent:#0f766e; --soft:#ccfbf1; --chip:#f0f3f6;
+}}
+*{{box-sizing:border-box}}
+body{{margin:0;min-height:100vh;color:var(--text);background:var(--bg);
+font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif}}
+.layout{{display:grid;grid-template-columns:240px 1fr;min-height:100vh}}
+.side{{background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:8px}}
+.brand{{font-weight:800;font-size:18px;padding:6px 8px 4px;letter-spacing:-.03em}}
+.brand small{{display:block;color:var(--muted);font-size:11px;font-weight:500;margin-top:3px}}
+.btn-new{{display:block;text-align:center;text-decoration:none;background:var(--soft);color:var(--accent);
+font-weight:700;border-radius:10px;padding:10px 12px;margin:4px 0 10px}}
+.side h3{{margin:8px 8px 4px;font-size:12px;color:var(--muted);font-weight:600}}
+a.nav,.nav{{display:block;text-decoration:none;padding:10px 12px;border-radius:10px;margin:0 0 4px;color:var(--text);
+font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+a.nav.on{{background:var(--soft);color:var(--accent);font-weight:700}}
+.nav.muted{{color:var(--muted)}}
+.main{{display:flex;flex-direction:column;min-height:100vh}}
+.top{{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;
+border-bottom:1px solid var(--line);background:rgba(255,255,255,.85)}}
+.top h2{{margin:0;font-size:14px}} .top span{{color:var(--muted);font-size:12px}}
+.stage{{flex:1;overflow:auto;padding:28px 20px 12px}}
+.hero{{text-align:center;padding:56px 8px 20px}}
+.hero h1{{margin:0 0 10px;font-size:34px;letter-spacing:-.04em}}
+.hero p{{margin:0;color:var(--muted)}}
+.sugs{{max-width:760px;margin:22px auto 0;display:grid;grid-template-columns:1fr 1fr;gap:10px}}
+.sug{{cursor:pointer;text-align:left;background:var(--panel);border:1px solid var(--line);
+border-radius:12px;padding:12px 14px;font:inherit;color:#334155}}
+.sug:hover{{border-color:#99f6e4}}
+.chat{{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:12px}}
+.row{{display:flex}} .row.user{{justify-content:flex-end}}
+.bubble{{max-width:78%;padding:12px 14px;border-radius:16px;line-height:1.55;font-size:14px;
+white-space:pre-wrap;word-break:break-word}}
+.bubble.user{{background:var(--accent);color:#ecfdf5;border-bottom-right-radius:4px}}
+.bubble.bot{{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}}
+.bottom{{padding:8px 18px 18px}}
+.composer{{max-width:860px;margin:0 auto;background:var(--panel);border:1px solid var(--line);
+border-radius:18px;padding:12px;box-shadow:0 10px 30px rgba(15,23,42,.04)}}
+.composer textarea{{width:100%;border:0;outline:none;resize:none;min-height:78px;font:inherit;background:transparent}}
+.actions{{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap}}
+.left-acts{{display:flex;gap:8px;align-items:center}}
+button.send,button.ghost,label.filebtn{{border:0;border-radius:999px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}}
+button:disabled,label.filebtn.disabled{{opacity:.5;cursor:not-allowed}}
+.send{{background:var(--accent);color:#fff}} .ghost{{background:#eef2f8;color:#516084}}
+.filebtn{{background:#eef2f8;color:#516084;display:inline-block}}
+.filebtn input{{display:none}}
+#filehint{{font-size:12px;color:var(--muted)}}
+.skillbar{{max-width:860px;margin:12px auto 0;display:flex;flex-wrap:wrap;gap:8px}}
+a.skill{{text-decoration:none;background:var(--chip);border-radius:999px;padding:8px 12px;font-size:12px;color:#475569}}
+a.skill.on{{background:var(--soft);color:var(--accent);font-weight:700}}
+@media (max-width:860px){{.layout{{grid-template-columns:1fr}}.side{{display:none}}.sugs{{grid-template-columns:1fr}}}}
+</style></head><body>
+<div class="layout">
+  <aside class="side">
+    <div class="brand">PrivateLocalAgent<small>Track 2 · 私有本地 Agent</small></div>
+    <a class="btn-new" href="/?new=1">＋ 新对话</a>
+    <h3>对话记录</h3>
+    {''.join(hist_items)}
+  </aside>
+  <section class="main">
+    <div class="top">
+      <h2>{html.escape(title)}</h2>
+      <span>内容本地处理 · 支持图文解析</span>
+    </div>
+    <div class="stage" id="stage">{stage}</div>
+    <div class="bottom">
+      <div class="composer">
+        <input type="hidden" id="sid" value="{html.escape(sid)}"/>
+        <input type="hidden" id="mode" value="{html.escape(mode)}"/>
+        <textarea id="q" placeholder="发消息… Enter 发送，Shift+Enter 换行" {disabled}>{html.escape(q)}</textarea>
+        <div class="actions">
+          <div class="left-acts">
+            <label class="filebtn {'disabled' if disabled else ''}">上传图片
+              <input id="file" type="file" accept="image/*" {disabled}/>
+            </label>
+            <span id="filehint"></span>
+          </div>
+          <div class="left-acts">
+            <button class="ghost" type="button" id="clear" {disabled}>清空本对话</button>
+            <button class="send" type="button" id="send" {disabled}>发送</button>
+          </div>
+        </div>
+      </div>
+      <div class="skillbar">{''.join(mode_bar)}</div>
+    </div>
+  </section>
+</div>
+<script>
+const sid = document.getElementById('sid').value;
+const mode = document.getElementById('mode').value;
+const qEl = document.getElementById('q');
+const stage = document.getElementById('stage');
+const hint = document.getElementById('filehint');
+let pendingFile = null;
+
+function ensureChat() {{
+  let chat = document.getElementById('chat');
+  if (!chat) {{
+    stage.innerHTML = '<div class="chat" id="chat"></div>';
+    chat = document.getElementById('chat');
+  }}
+  return chat;
+}}
+function addBubble(role, text) {{
+  const chat = ensureChat();
+  const row = document.createElement('div');
+  row.className = 'row ' + (role === 'user' ? 'user' : 'bot');
+  const b = document.createElement('div');
+  b.className = 'bubble ' + (role === 'user' ? 'user' : 'bot');
+  b.textContent = text;
+  row.appendChild(b);
+  chat.appendChild(row);
+  stage.scrollTop = stage.scrollHeight;
+}}
+async function sendText(text) {{
+  const q = (text || qEl.value || '').trim();
+  if (!q) return;
+  qEl.value = '';
+  addBubble('user', q);
+  addBubble('bot', '处理中…');
+  const bubbles = document.querySelectorAll('.bubble.bot');
+  const last = bubbles[bubbles.length - 1];
+  try {{
+    const res = await fetch('/api/chat', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{sid, mode, q}})
+    }});
+    const data = await res.json();
+    last.textContent = data.answer || data.error || '无回复';
+  }} catch (e) {{
+    last.textContent = '发送失败，请重试';
+  }}
+}}
+document.getElementById('send').onclick = () => sendText();
+document.getElementById('clear').onclick = async () => {{
+  await fetch('/api/clear', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{sid}})}});
+  location.href = '/?sid=' + encodeURIComponent(sid) + '&mode=' + encodeURIComponent(mode);
+}};
+qEl.addEventListener('keydown', (e) => {{
+  if (e.key === 'Enter' && !e.shiftKey) {{
+    e.preventDefault();
+    sendText();
+  }}
+}});
+document.querySelectorAll('.sug').forEach(btn => {{
+  btn.addEventListener('click', () => sendText(btn.dataset.q || btn.textContent));
+}});
+document.getElementById('file').addEventListener('change', async (e) => {{
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  hint.textContent = '上传中: ' + f.name;
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('sid', sid);
+  fd.append('mode', mode);
+  try {{
+    const res = await fetch('/api/upload', {{method:'POST', body: fd}});
+    const data = await res.json();
+    hint.textContent = data.ok ? ('已上传: ' + data.name) : (data.error || '上传失败');
+    if (data.ok) {{
+      // switch hint: auto parse after upload in vision mode
+      const prompt = mode === 'vision' ? ('解析图片 ' + data.name) : ('解析刚上传的图片 ' + data.name);
+      await sendText(prompt);
+    }}
+  }} catch (err) {{
+    hint.textContent = '上传失败';
+  }}
+}});
+</script>
+</body></html>"""
+    return body.encode("utf-8")
+
+
+def _read_json(handler: BaseHTTPRequestHandler) -> dict:
+    length = int(handler.headers.get("Content-Length", "0"))
+    raw = handler.rfile.read(length).decode("utf-8", errors="ignore") if length else "{}"
+    try:
+        return json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+
+def _read_multipart(handler: BaseHTTPRequestHandler) -> tuple[str, bytes, dict]:
+    """Return filename, file bytes, form fields."""
+    ctype = handler.headers.get("Content-Type", "")
+    length = int(handler.headers.get("Content-Length", "0"))
+    body = handler.rfile.read(length)
+    m = re.search(r"boundary=(.+)", ctype)
+    if not m:
+        return "", b"", {}
+    boundary = m.group(1).strip().encode()
+    parts = body.split(b"--" + boundary)
+    fields: dict[str, str] = {}
+    filename, data = "", b""
+    for part in parts:
+        if b"Content-Disposition" not in part:
+            continue
+        head, _, content = part.partition(b"\r\n\r\n")
+        content = content.rstrip(b"\r\n--")
+        hm = re.search(br'name="([^"]+)"', head)
+        if not hm:
+            continue
+        name = hm.group(1).decode()
+        fm = re.search(br'filename="([^"]*)"', head)
+        if fm:
+            filename = fm.group(1).decode(errors="ignore") or "upload.bin"
+            data = content
+        else:
+            fields[name] = content.decode("utf-8", errors="ignore")
+    return filename, data, fields
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        global CURRENT_ID, MODE
+        path = urlparse(self.path).path
+        if path.startswith("/healthz"):
+            self._text(200, "ok")
+            return
+        ensure_runtime_async()
+        if not SESSIONS:
+            _new_session(DEFAULT_MODE)
+        qs = parse_qs(urlparse(self.path).query)
+        if qs.get("new", [""])[0] == "1":
+            _new_session(qs.get("mode", [MODE])[0] if qs.get("mode") else DEFAULT_MODE)
+        if "sid" in qs and qs["sid"][0] in SESSIONS:
+            CURRENT_ID = qs["sid"][0]
+            MODE = SESSIONS[CURRENT_ID].get("mode") or MODE
+        if "mode" in qs and qs["mode"][0] in _MODE_IDS:
+            MODE = qs["mode"][0]
+            sid = _ensure_session()
+            SESSIONS[sid]["mode"] = MODE
+        self._html(page())
+
+    def do_POST(self):  # noqa: N802
+        global CURRENT_ID, MODE
+        ensure_runtime_async()
+        path = urlparse(self.path).path
+
+        if path == "/api/clear":
+            data = _read_json(self)
+            sid = data.get("sid") or CURRENT_ID
+            if sid in SESSIONS:
+                SESSIONS[sid]["messages"] = []
+                SESSIONS[sid]["title"] = "新对话"
+                CURRENT_ID = sid
+            self._json({"ok": True})
+            return
+
+        if path == "/api/upload":
+            if UPLOAD_DIR is None or not READY:
+                self._json({"ok": False, "error": "服务未就绪"}, 503)
+                return
+            filename, data, fields = _read_multipart(self)
+            if not data:
+                self._json({"ok": False, "error": "空文件"}, 400)
+                return
+            saved = _save_upload(filename, data)
+            sid = fields.get("sid") or CURRENT_ID
+            mode = fields.get("mode") or MODE
+            if sid in SESSIONS:
+                CURRENT_ID = sid
+            if mode in _MODE_IDS:
+                MODE = mode
+                if sid in SESSIONS:
+                    SESSIONS[sid]["mode"] = mode
+            self._json({"ok": True, "name": saved.name, "path": str(saved)})
+            return
+
+        if path == "/api/chat":
+            data = _read_json(self)
+            sid = data.get("sid") or CURRENT_ID
+            mode = data.get("mode") or MODE
+            q = (data.get("q") or "").strip()
+            if sid in SESSIONS:
+                CURRENT_ID = sid
+            else:
+                sid = _ensure_session()
+            if mode in _MODE_IDS:
+                MODE = mode
+                SESSIONS[sid]["mode"] = mode
+            if not READY or ORCH is None:
+                self._json({"error": "模型还在加载，请稍后再发送。"}, 503)
+                return
+            if not q:
+                self._json({"answer": ""})
+                return
+            # vision keywords auto-route even outside vision chip when image mentioned
+            result = ORCH.run(q, mode=MODE)
+            SESSIONS[sid]["messages"].append((q, result.answer))
+            if SESSIONS[sid]["title"] in {"", "新对话"}:
+                SESSIONS[sid]["title"] = q[:18] + ("…" if len(q) > 18 else "")
+            self._json({"answer": result.answer})
+            return
+
+        # legacy form POST fallback
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length).decode("utf-8", errors="ignore")
+        data = parse_qs(raw)
+        action = (data.get("action") or [""])[0]
+        sid = (data.get("sid") or [CURRENT_ID])[0]
+        mode = (data.get("mode") or [MODE])[0]
+        if sid in SESSIONS:
+            CURRENT_ID = sid
+        else:
+            sid = _ensure_session()
+        if mode in _MODE_IDS:
+            MODE = mode
+            SESSIONS[sid]["mode"] = mode
+        q = (data.get("q") or [""])[0].strip()
+        if action == "clear":
+            SESSIONS[sid]["messages"] = []
+            SESSIONS[sid]["title"] = "新对话"
+            self._html(page())
+            return
+        if not READY or ORCH is None:
+            self._html(page(notice="模型还在加载，请稍后再发送。", q=q))
+            return
+        if q:
+            result = ORCH.run(q, mode=MODE)
+            SESSIONS[sid]["messages"].append((q, result.answer))
+            if SESSIONS[sid]["title"] in {"", "新对话"}:
+                SESSIONS[sid]["title"] = q[:18] + ("…" if len(q) > 18 else "")
+        self._html(page())
+
+    def log_message(self, fmt: str, *args) -> None:
+        print("[http]", fmt % args)
+
+    def _html(self, content: bytes) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(content)
+
+    def _json(self, obj: dict, code: int = 200) -> None:
+        raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _text(self, code: int, text: str) -> None:
+        raw = text.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+
+def main() -> None:
+    host = os.getenv("HTTP_HOST", "0.0.0.0")
+    port = int(os.getenv("HTTP_PORT", "7900"))
+    _new_session(DEFAULT_MODE)
+    print(f"Studio UI: http://127.0.0.1:{port}")
+    print("Cloudflare: python scripts/run_cloudflare_tunnel.py")
+    ensure_runtime_async()
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()
