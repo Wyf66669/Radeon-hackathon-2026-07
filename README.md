@@ -59,6 +59,8 @@ Doubao-style web + Cloudflare: `docs/CLOUDFLARE_TUNNEL.md` · `python scripts/ru
 **Fallback:** `python scripts/demo_cli.py`.  
 Details: `docs/RADEON_CLOUD_RUN.md` · Checklist: `docs/SUBMISSION_CHECKLIST.md` · PR text: `docs/PR_BODY.md`
 
+**Cloud backup (before 2026-07-31 18:00):** `python scripts/backup_to_persistence.py` then `git push`.
+
 Get a free Model API key from:
 https://developer.amd.com.cn/radeon/modelapis
 

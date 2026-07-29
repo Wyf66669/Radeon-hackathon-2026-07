@@ -58,6 +58,15 @@ PR draft text: `docs/PR_BODY.md`
 Valid submitted teams may receive a **Certificate of Completion**.  
 Final review may also award Gold / Silver / Bronze / **Excellent** certificates.
 
+## Pre-maintenance backup (2026-07-31 18:00 UTC+8)
+
+| Action | Command / place |
+|--------|-----------------|
+| NFS persistence | `/workspace/persistence` |
+| One-shot backup | `python scripts/backup_to_persistence.py` |
+| Push code | `git push origin track2-private-local-agent` |
+| Demo video copy | Release `demo-v1` on the fork |
+
 ## Contact
 
 Contest email: ai_dev_contests@amd.com

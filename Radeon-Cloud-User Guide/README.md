@@ -43,6 +43,8 @@ If you want your files to persist, set **Storage** to **Persistent (PVC)** — i
 **Durable path (official, 2026-07+):** put long-lived data under **`/workspace/persistence`** (not only under the cloned repo).  
 PrivateLocalAgent uses `/workspace/persistence/PrivateLocalAgent` for KB/memory/uploads and recommends `HF_HOME=/workspace/persistence/huggingface` for models. See `docs/RADEON_CLOUD_RUN.md`.
 
+**Maintenance window:** before **2026-07-31 18:00 (UTC+8)**, run `python scripts/backup_to_persistence.py` and **push** your branch to GitHub.
+
 Click **Add Template** at the bottom to finish.
 
 ---

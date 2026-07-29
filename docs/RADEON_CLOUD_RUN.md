@@ -1,5 +1,31 @@
 # Radeon Cloud Run Guide (Track 2)
 
+## ⚠ Platform maintenance (backup before Friday)
+
+**Deadline: 2026-07-31 (Fri) 18:00 UTC+8** — platform release / maintenance window.
+
+Before then, on every cloud instance:
+
+```bash
+cd /workspace/Radeon-hackathon-2026-07
+export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
+export HF_HOME=/workspace/persistence/huggingface
+export HF_ENDPOINT=https://hf-mirror.com
+python scripts/backup_to_persistence.py
+# also push code (required — do not keep a single copy on the VM)
+git status
+git push origin track2-private-local-agent
+```
+
+Checklist:
+
+1. Mutable data under **`/workspace/persistence`** (NFS PVC)
+2. Code **pushed** to GitHub (`Wyf66669/Radeon-hackathon-2026-07`)
+3. Demo video already on Release `demo-v1` (extra copy)
+4. Optional: download a zip of `persistence/PrivateLocalAgent` to your laptop
+
+---
+
 ## Persistent storage (important)
 
 Official durable directory:
@@ -24,6 +50,7 @@ export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
 export HF_HOME=/workspace/persistence/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
 python scripts/migrate_to_persistence.py
+python scripts/backup_to_persistence.py
 ```
 
 Add the three `export` lines to every new terminal session (or put them in `~/.bashrc`).

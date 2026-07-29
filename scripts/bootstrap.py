@@ -32,6 +32,7 @@ def _setup_cloud_persistence() -> None:
     print(f"[persistence] PLA_DATA_ROOT={os.environ['PLA_DATA_ROOT']}")
     print(f"[persistence] HF_HOME={os.environ['HF_HOME']}")
     run([sys.executable, str(ROOT / "scripts" / "migrate_to_persistence.py")])
+    run([sys.executable, str(ROOT / "scripts" / "backup_to_persistence.py")])
 
 
 def main() -> None:
