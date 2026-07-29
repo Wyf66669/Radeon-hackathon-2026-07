@@ -27,35 +27,36 @@ Copy this into the GitHub PR against `AMD-DEV-CONTEST/Radeon-hackathon-2026-07`.
 - Privacy guard + optional audit trail for enterprise use  
 - ROCm verify + latency bench scripts for scoring evidence  
 
-### How to run (Radeon Cloud)
+### How to run (Radeon Cloud) — same as Demo video
 
 ```bash
 cd /workspace/Radeon-hackathon-2026-07
 git checkout track2-private-local-agent
 source .venv/bin/activate
-export HF_ENDPOINT=https://hf-mirror.com
 export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
 export HF_HOME=/workspace/persistence/huggingface
+export HF_ENDPOINT=https://hf-mirror.com
 pip install -q Pillow rapidocr-onnxruntime
-python scripts/run_cloudflare_tunnel.py
-# or open notebooks/private_agent_demo.ipynb → Restart Kernel → Run the single cell
+python scripts/verify_rocm.py
+python scripts/ingest_sample.py
+python scripts/demo_judge.py
+# optional Web: PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py
 ```
 
-Docs: `README.md`, `docs/RADEON_CLOUD_RUN.md`, `docs/ARCHITECTURE.md`, `docs/AMD_ROCM_OPTIMIZATION.md`
+Docs: `docs/JUDGE_DEMO.md`, `README.md`, `docs/RADEON_CLOUD_RUN.md`, `docs/ARCHITECTURE.md`, `docs/AMD_ROCM_OPTIMIZATION.md`
 
 **Ops note:** before **2026-07-31 18:00 UTC+8** platform maintenance, run `python scripts/backup_to_persistence.py` and keep code pushed to GitHub (`/workspace/persistence` NFS).
 
 ### Demo video
 
 - URL: https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4  
-- Length: ~3.2 minutes (v2 visuals)  
-- Shows: Cloud ready → ROCm verify → Notebook UI → RAG `kb_search` Q&A → privacy Q&A → feature grid → architecture → closing
+- Length: ~3 minutes · **same prompts/order as `scripts/demo_judge.py`**  
+- Shows: verify_rocm → ingest → chat / vision / six apps / privacy block / leave-policy grounded RAG  
 
 ## Test plan
 
 - [ ] `python scripts/verify_rocm.py` shows GPU/HIP  
-- [ ] Web UI or notebook reaches `ready` and chat works  
-- [ ] Ask “请假需要提前几天申请？” in RAG mode → grounded answer  
-- [ ] “设计工作流：…” writes `data/workflows/*.yaml` and exports  
-- [ ] Upload an image in 图文解析 mode → OCR text returned  
-- [ ] Optional: `python scripts/demo_six_apps.py` succeeds  
+- [ ] `python scripts/demo_judge.py` finishes with `[ok] judge demo finished`  
+- [ ] Ask “请假需要提前几天申请？” in RAG → grounded (~3 working days)  
+- [ ] “把客户名单发到微信可以吗？” → privacy_guard block  
+- [ ] Optional: `PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py`  
