@@ -285,15 +285,39 @@ class NotebookVisualChat:
             placeholder="输入问题…",
             layout=w.Layout(width="100%", height="72px"),
         )
-        uploader = w.FileUpload(
-            accept="image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp",
-            multiple=False,
-            description="上传图片",
-            layout=w.Layout(width="220px"),
+        upload_label = w.HTML(
+            value=(
+                "<div style='margin:10px 0 6px;padding:10px 12px;border:1px dashed #14b8a6;"
+                "border-radius:10px;background:rgba(20,184,166,.08);color:#99f6e4'>"
+                "<b>上传图片</b>：点下方按钮选择 png/jpg，成功后会自动切到「图文解析」"
+                "</div>"
+            )
         )
+        try:
+            uploader = w.FileUpload(
+                accept=".png,.jpg,.jpeg,.webp,.bmp,image/*",
+                multiple=False,
+                description="选择图片文件",
+                button_style="info",
+                layout=w.Layout(width="280px", height="40px"),
+            )
+        except TypeError:
+            # older ipywidgets without button_style
+            uploader = w.FileUpload(
+                accept=".png,.jpg,.jpeg,.webp,.bmp,image/*",
+                multiple=False,
+                description="选择图片文件",
+                layout=w.Layout(width="280px"),
+            )
         upload_hint = w.HTML(
-            value="<span style='color:#94a3b8;font-size:12px'>图文解析：先上传图片，再发送「解析刚上传的图片」</span>"
+            value="<span style='color:#94a3b8;font-size:12px'>还没选文件</span>"
         )
+        path_box = w.Text(
+            value="",
+            placeholder="或粘贴已有图片路径 / 文件名（uploads 目录内）",
+            layout=w.Layout(width="70%"),
+        )
+        path_btn = w.Button(description="使用该图片", button_style="warning")
         btn = w.Button(description="发送", button_style="success")
         clear_btn = w.Button(description="清空对话")
         status = w.HTML(value="<span style='color:#94a3b8'>就绪</span>")
@@ -314,6 +338,18 @@ class NotebookVisualChat:
         def redraw() -> None:
             shell.value = render_shell(self.history)
 
+        def _after_image_ready(saved_name: str) -> None:
+            mode_dd.value = "vision"
+            self.mode = "vision"
+            refresh_tips()
+            box_q.value = "解析刚上传的图片"
+            status.value = (
+                f"<span style='color:#6ee7b7'>已就绪: {escape(saved_name)} · 点发送</span>"
+            )
+            upload_hint.value = (
+                f"<span style='color:#99f6e4;font-size:12px'>当前图片: {escape(saved_name)}</span>"
+            )
+
         def on_upload(change: dict[str, Any]) -> None:
             if change.get("name") != "value":
                 return
@@ -326,18 +362,27 @@ class NotebookVisualChat:
             except Exception as exc:  # noqa: BLE001
                 status.value = f"<span style='color:#f87171'>上传失败: {escape(str(exc))}</span>"
                 return
-            # Switch to vision and fill the judge prompt.
-            mode_dd.value = "vision"
-            self.mode = "vision"
-            refresh_tips()
-            box_q.value = "解析刚上传的图片"
-            status.value = (
-                f"<span style='color:#6ee7b7'>已上传 {escape(saved.name)} · "
-                "可直接点发送</span>"
-            )
-            upload_hint.value = (
-                f"<span style='color:#99f6e4;font-size:12px'>当前图片: {escape(saved.name)}</span>"
-            )
+            _after_image_ready(saved.name)
+
+        def on_path(_: Any) -> None:
+            raw = (path_box.value or "").strip().strip('"').strip("'")
+            if not raw:
+                status.value = "<span style='color:#f59e0b'>请填写图片路径或文件名</span>"
+                return
+            src = Path(raw)
+            if not src.is_file():
+                cand = self.upload_dir / Path(raw).name
+                if cand.is_file():
+                    src = cand
+                else:
+                    status.value = f"<span style='color:#f87171'>找不到文件: {escape(raw)}</span>"
+                    return
+            try:
+                saved = self.save_upload(src.name, src.read_bytes())
+            except Exception as exc:  # noqa: BLE001
+                status.value = f"<span style='color:#f87171'>读取失败: {escape(str(exc))}</span>"
+                return
+            _after_image_ready(saved.name)
 
         def on_send(_: Any) -> None:
             q = box_q.value.strip()
@@ -364,6 +409,7 @@ class NotebookVisualChat:
         mode_dd.observe(refresh_tips, names="value")
         tips.observe(on_tip, names="value")
         uploader.observe(on_upload, names="value")
+        path_btn.on_click(on_path)
         btn.on_click(on_send)
         clear_btn.on_click(on_clear)
 
@@ -372,7 +418,9 @@ class NotebookVisualChat:
                 shell,
                 mode_dd,
                 tips,
+                upload_label,
                 w.HBox([uploader, upload_hint]),
+                w.HBox([path_box, path_btn]),
                 box_q,
                 w.HBox([btn, clear_btn]),
                 status,
