@@ -194,7 +194,7 @@ def page(notice: str = "", q: str = "") -> bytes:
     for s_id, s in reversed(list(SESSIONS.items())):
         on = " on" if s_id == sid else ""
         label = html.escape(s.get("title") or "新对话")
-        hist_items.append(f'<a class="nav{on}" href="/?sid={s_id}">{label}</a>')
+        hist_items.append(f'<a class="nav{on}" href="?sid={s_id}">{label}</a>')
     if not hist_items:
         hist_items.append('<div class="nav muted">暂无对话记录</div>')
 
@@ -231,7 +231,7 @@ def page(notice: str = "", q: str = "") -> bytes:
     for app in UI_MODES:
         on = " on" if app.id == mode else ""
         mode_bar.append(
-            f'<a class="skill{on}" href="/?sid={sid}&mode={html.escape(app.id)}">{html.escape(app.title)}</a>'
+            f'<a class="skill{on}" href="?sid={sid}&mode={html.escape(app.id)}">{html.escape(app.title)}</a>'
         )
 
     disabled = "disabled" if not READY else ""
@@ -309,7 +309,7 @@ a.skill.on{{background:var(--soft);color:var(--accent);font-weight:700}}
 <div class="layout">
   <aside class="side">
     <div class="brand">PrivateLocalAgent<small>Track 2 · 私有本地 Agent</small></div>
-    <a class="btn-new" href="/?new=1">＋ 新对话</a>
+    <a class="btn-new" href="?new=1">＋ 新对话</a>
     <h3>对话记录</h3>
     {''.join(hist_items)}
   </aside>
@@ -377,7 +377,7 @@ async function sendText(text) {{
   const bubbles = document.querySelectorAll('.bubble.bot');
   const last = bubbles[bubbles.length - 1];
   try {{
-    const res = await fetch('/api/chat', {{
+    const res = await fetch('api/chat', {{
       method: 'POST',
       headers: {{'Content-Type': 'application/json'}},
       body: JSON.stringify({{sid, mode, q}})
@@ -390,8 +390,8 @@ async function sendText(text) {{
 }}
 document.getElementById('send').onclick = () => sendText();
 document.getElementById('clear').onclick = async () => {{
-  await fetch('/api/clear', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{sid}})}});
-  location.href = '/?sid=' + encodeURIComponent(sid) + '&mode=' + encodeURIComponent(mode);
+  await fetch('api/clear', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{sid}})}});
+  location.href = '?sid=' + encodeURIComponent(sid) + '&mode=' + encodeURIComponent(mode);
 }};
 qEl.addEventListener('keydown', (e) => {{
   if (e.key === 'Enter' && !e.shiftKey) {{
@@ -407,7 +407,7 @@ document.querySelectorAll('.ggo').forEach(btn => {{
     const m = btn.dataset.mode || mode;
     const q = btn.dataset.q || '';
     if (m && m !== mode) {{
-      location.href = '/?sid=' + encodeURIComponent(sid) + '&mode=' + encodeURIComponent(m) + '&q=' + encodeURIComponent(q);
+      location.href = '?sid=' + encodeURIComponent(sid) + '&mode=' + encodeURIComponent(m) + '&q=' + encodeURIComponent(q);
       return;
     }}
     sendText(q);
@@ -428,13 +428,13 @@ document.getElementById('file').addEventListener('change', async (e) => {{
   fd.append('sid', sid);
   fd.append('mode', mode === 'vision' ? mode : 'vision');
   try {{
-    const res = await fetch('/api/upload', {{method:'POST', body: fd}});
+    const res = await fetch('api/upload', {{method:'POST', body: fd}});
     const data = await res.json();
     hint.textContent = data.ok ? ('已上传: ' + data.name) : (data.error || '上传失败');
     if (data.ok) {{
       // Exact judge/video prompt
       if (mode !== 'vision') {{
-        location.href = '/?sid=' + encodeURIComponent(sid) + '&mode=vision&q=' + encodeURIComponent('解析刚上传的图片');
+        location.href = '?sid=' + encodeURIComponent(sid) + '&mode=vision&q=' + encodeURIComponent('解析刚上传的图片');
         return;
       }}
       await sendText('解析刚上传的图片');
