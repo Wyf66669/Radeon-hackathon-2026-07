@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -17,7 +18,24 @@ def run(cmd: list[str]) -> None:
     subprocess.check_call(cmd, cwd=ROOT)
 
 
+def _setup_cloud_persistence() -> None:
+    persist = Path("/workspace/persistence")
+    if not persist.is_dir():
+        return
+    data_root = Path(os.getenv("PLA_DATA_ROOT", str(persist / "PrivateLocalAgent")))
+    data_root.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("PLA_DATA_ROOT", str(data_root))
+    hf = persist / "huggingface"
+    hf.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HF_HOME", str(hf))
+    os.environ.setdefault("HF_ENDPOINT", os.getenv("HF_ENDPOINT", "https://hf-mirror.com"))
+    print(f"[persistence] PLA_DATA_ROOT={os.environ['PLA_DATA_ROOT']}")
+    print(f"[persistence] HF_HOME={os.environ['HF_HOME']}")
+    run([sys.executable, str(ROOT / "scripts" / "migrate_to_persistence.py")])
+
+
 def main() -> None:
+    _setup_cloud_persistence()
     run([sys.executable, "-m", "pip", "install", "-U", "pip"])
     run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
 
@@ -44,6 +62,7 @@ def main() -> None:
     run([sys.executable, str(ROOT / "scripts" / "verify_rocm.py")])
     run([sys.executable, str(ROOT / "scripts" / "ingest_sample.py")])
     print("Bootstrap done. Start demo with: python app.py")
+    print("On Radeon Cloud, keep durable files under /workspace/persistence")
 
 
 if __name__ == "__main__":

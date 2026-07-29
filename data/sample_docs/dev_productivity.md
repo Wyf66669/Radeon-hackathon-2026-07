@@ -11,7 +11,9 @@
 运行 `scripts/verify_rocm.py`，应看到 `cuda_available: True` 与 Radeon 设备名。
 
 ### Q：模型下载到哪里？
-默认 Hugging Face 缓存：`/root/.cache/huggingface`（大文件不建议堆满 `/workspace`）。
+默认 Hugging Face 缓存建议：`/workspace/persistence/huggingface`（设置 `HF_HOME`）。  
+运行时数据（向量库/记忆/上传）：`/workspace/persistence/PrivateLocalAgent`（设置 `PLA_DATA_ROOT`）。  
+不要把大模型堆在易丢的临时目录。
 
 ### Q：如何交接环境？
 可触发「开发者交接工作流」：检查 GPU 要求、文件列表、知识库状态并写入交接事实。

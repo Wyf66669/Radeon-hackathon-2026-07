@@ -14,10 +14,16 @@ from typing import Any
 
 import yaml
 
-from src.config import ROOT
+from src.config import resolve_data_path
 
-APP_CONFIG_DIR = ROOT / "data" / "app_configs"
-EXPORT_DIR = ROOT / "data" / "exports" / "apps"
+
+def app_config_dir() -> Path:
+    return resolve_data_path("data/app_configs")
+
+
+def app_export_dir() -> Path:
+    return resolve_data_path("data/exports/apps")
+
 
 _CONFIG_HINTS = (
     "配置",
@@ -55,7 +61,7 @@ class AppBuildResult:
 
 
 def _write_exports(app: str, config_id: str, payload: dict[str, Any]) -> dict[str, str]:
-    base = EXPORT_DIR / app / config_id
+    base = app_export_dir() / app / config_id
     base.mkdir(parents=True, exist_ok=True)
     written: dict[str, str] = {}
     yml = base / "config.yaml"
@@ -93,7 +99,7 @@ def _write_exports(app: str, config_id: str, payload: dict[str, Any]) -> dict[st
 
 
 def _save_native(app: str, config_id: str, payload: dict[str, Any]) -> Path:
-    folder = APP_CONFIG_DIR / app
+    folder = app_config_dir() / app
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{config_id}.yaml"
     path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")

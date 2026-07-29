@@ -9,9 +9,11 @@ from typing import Any
 import yaml
 
 from src.agent.workflow_registry import get_registry
-from src.config import ROOT
+from src.config import resolve_data_path
 
-EXPORT_DIR = ROOT / "data" / "exports" / "workflows"
+
+def export_dir() -> Path:
+    return resolve_data_path("data/exports/workflows")
 
 
 def export_generic_yaml(workflow: dict[str, Any]) -> str:
@@ -118,7 +120,7 @@ def export_workflow(
     if not wf:
         raise KeyError(f"unknown workflow: {workflow_id}")
     fmts = formats or ["yaml", "json", "dify", "langchain"]
-    base = out_dir or (EXPORT_DIR / workflow_id)
+    base = out_dir or (export_dir() / workflow_id)
     base.mkdir(parents=True, exist_ok=True)
     written: dict[str, str] = {}
     for fmt in fmts:

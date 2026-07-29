@@ -32,3 +32,8 @@ data/workflows/*
 .cache/
 tmp/
 .ipynb_checkpoints/
+
+demo_assets/
+docs/_pr_body_with_video.md
+.tools/
+

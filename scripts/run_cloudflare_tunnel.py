@@ -16,6 +16,21 @@ ROOT = Path(__file__).resolve().parents[1]
 PORT = int(os.getenv("HTTP_PORT", "7900"))
 
 
+def _ensure_persistence_env(env: dict[str, str]) -> None:
+    persist = Path("/workspace/persistence")
+    if not persist.is_dir():
+        return
+    data_root = env.get("PLA_DATA_ROOT") or str(persist / "PrivateLocalAgent")
+    hf_home = env.get("HF_HOME") or str(persist / "huggingface")
+    Path(data_root).mkdir(parents=True, exist_ok=True)
+    Path(hf_home).mkdir(parents=True, exist_ok=True)
+    env.setdefault("PLA_DATA_ROOT", data_root)
+    env.setdefault("HF_HOME", hf_home)
+    env.setdefault("HF_ENDPOINT", env.get("HF_ENDPOINT", "https://hf-mirror.com"))
+    print(f"[persistence] PLA_DATA_ROOT={env['PLA_DATA_ROOT']}")
+    print(f"[persistence] HF_HOME={env['HF_HOME']}")
+
+
 def _download(url: str, target: Path) -> None:
     """Download with several fallbacks (SSL issues common behind cloud proxies)."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -114,6 +129,7 @@ def main() -> None:
     env = os.environ.copy()
     env["HTTP_HOST"] = "127.0.0.1"
     env["HTTP_PORT"] = str(PORT)
+    _ensure_persistence_env(env)
 
     print(f"[web] starting PrivateLocalAgent studio on http://127.0.0.1:{PORT}")
     web = subprocess.Popen(

@@ -20,3 +20,10 @@ Record on Radeon Cloud JupyterLab. **No tunnel needed.**
 - Zoom browser so chat bubbles and “Tools:” line are readable  
 - If model already loaded, skip long wait by reusing kernel after first `ready`  
 - Upload to Bilibili/YouTube/Drive → paste link into `docs/PR_BODY.md` and the GitHub PR  
+
+## Submitted video (current)
+
+- File: `demo_assets/PrivateLocalAgent_demo.mp4` (regenerate: `python scripts/generate_demo_video.py`)  
+- Version: v2 — 8fps H.264, typed terminal, notebook/chat mocks, progress bar, ~3.2 min  
+- Public URL: https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4  
+- Linked in official PR: https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40  

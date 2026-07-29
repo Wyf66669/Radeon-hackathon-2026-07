@@ -1,5 +1,35 @@
 # Radeon Cloud Run Guide (Track 2)
 
+## Persistent storage (important)
+
+Official durable directory:
+
+```text
+/workspace/persistence
+```
+
+PrivateLocalAgent automatically uses:
+
+```text
+/workspace/persistence/PrivateLocalAgent/   # vector store, memory, uploads, workflows, exports
+/workspace/persistence/huggingface/        # recommended HF_HOME for models
+```
+
+`data/sample_docs/` stays in the git checkout (seed knowledge).  
+If you previously saved models/KB under `/workspace/Radeon-hackathon-2026-07/data`, migrate once:
+
+```bash
+cd /workspace/Radeon-hackathon-2026-07
+export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
+export HF_HOME=/workspace/persistence/huggingface
+export HF_ENDPOINT=https://hf-mirror.com
+python scripts/migrate_to_persistence.py
+```
+
+Add the three `export` lines to every new terminal session (or put them in `~/.bashrc`).
+
+---
+
 ## Primary demo (recommended, no tunnel)
 
 JupyterLab notebook UI — no `rc-tunnel`, no `/proxy`:
@@ -7,6 +37,8 @@ JupyterLab notebook UI — no `rc-tunnel`, no `/proxy`:
 ```bash
 cd /workspace/Radeon-hackathon-2026-07
 git pull origin track2-private-local-agent
+export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
+export HF_HOME=/workspace/persistence/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
@@ -29,11 +61,20 @@ cd /workspace/Radeon-hackathon-2026-07
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
+export HF_HOME=/workspace/persistence/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
+python scripts/migrate_to_persistence.py
 
 python scripts/verify_rocm.py
 python scripts/ingest_sample.py
 python scripts/demo_cli.py
+```
+
+Or one-shot:
+
+```bash
+python scripts/bootstrap.py
 ```
 
 ## Optional HTTP / Gradio (needs tunnel or proxy)
@@ -52,6 +93,12 @@ export GRADIO_SERVER_PORT=7880
 python app.py
 ```
 
+## Certificates (AMD official)
+
+Successful valid submissions qualify for a **Certificate of Completion**.  
+Gold / Silver / Bronze / Excellent certificates are awarded by final review.
+
 ## Save credits
 
-Profile → **Destroy Instance** when finished recording.
+Profile → **Destroy Instance** when finished recording.  
+Durable files under `/workspace/persistence` survive instance destroy (PVC).

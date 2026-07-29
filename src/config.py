@@ -11,6 +11,44 @@ from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Radeon Cloud official persistent volume (2026-07 notice).
+# Mutable runtime data (vector store / memory / uploads / workflows / exports)
+# lives under this tree when present; sample docs stay in the git checkout.
+DEFAULT_PERSISTENCE_BASE = Path("/workspace/persistence")
+DEFAULT_CLOUD_DATA_ROOT = DEFAULT_PERSISTENCE_BASE / "PrivateLocalAgent"
+
+# Paths that must stay with the repository (seed content).
+_REPO_BOUND_PREFIXES = ("data/sample_docs",)
+
+
+def detect_data_root() -> Path:
+    """Return writable data root (cloud persistence or local repo)."""
+    env = os.getenv("PLA_DATA_ROOT", "").strip()
+    if env:
+        root = Path(env).expanduser()
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+    if DEFAULT_PERSISTENCE_BASE.is_dir():
+        root = DEFAULT_CLOUD_DATA_ROOT
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+    return ROOT
+
+
+def is_repo_bound_path(relative: str) -> bool:
+    rel = relative.replace("\\", "/").lstrip("./")
+    return any(rel == p or rel.startswith(p + "/") for p in _REPO_BOUND_PREFIXES)
+
+
+def resolve_data_path(relative: str) -> Path:
+    """Resolve a project-relative data path against PLA_DATA_ROOT / persistence."""
+    path = Path(relative)
+    if path.is_absolute():
+        return path
+    if is_repo_bound_path(str(relative)):
+        return ROOT / path
+    return detect_data_root() / path
+
 
 class AppConfig(BaseModel):
     name: str = "PrivateLocalAgent"
@@ -66,15 +104,39 @@ class Settings(BaseModel):
     paths: PathsConfig = Field(default_factory=PathsConfig)
 
     def resolve(self, relative: str) -> Path:
-        path = Path(relative)
-        return path if path.is_absolute() else ROOT / path
+        return resolve_data_path(relative)
+
+    def data_root(self) -> Path:
+        return detect_data_root()
 
 
 def load_settings(config_path: str | Path | None = None) -> Settings:
     load_dotenv(ROOT / ".env")
+    # Optional cloud overlay: configs/radeon_cloud.yaml (paths still relative; root via PLA_DATA_ROOT)
     path = Path(config_path) if config_path else ROOT / "configs" / "default.yaml"
     data: dict[str, Any] = {}
     if path.exists():
         with path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+    overlay = os.getenv("PLA_CONFIG_OVERLAY", "").strip()
+    if not overlay and DEFAULT_PERSISTENCE_BASE.is_dir():
+        candidate = ROOT / "configs" / "radeon_cloud.yaml"
+        if candidate.exists():
+            overlay = str(candidate)
+    if overlay:
+        op = Path(overlay)
+        if op.exists():
+            with op.open("r", encoding="utf-8") as f:
+                extra = yaml.safe_load(f) or {}
+            data = _deep_merge(data, extra)
     return Settings.model_validate(data)
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for key, val in overlay.items():
+        if isinstance(val, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], val)
+        else:
+            out[key] = val
+    return out

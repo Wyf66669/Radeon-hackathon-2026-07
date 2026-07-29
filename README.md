@@ -152,9 +152,10 @@ Demo video (3–5 min): follow `docs/DEMO_VIDEO_SCRIPT.md`
 
 - Python 3.10+ recommended
 - Embedding model downloads on first run (`sentence-transformers/all-MiniLM-L6-v2`)
-- Vector DB persists under `data/vector_store/`
-- Uploaded docs persist under `data/uploads/`
-- Memory persists under `data/memory/session.json`
+- Vector DB / uploads / memory resolve under `data/` locally, or under  
+  `/workspace/persistence/PrivateLocalAgent/data/` on Radeon Cloud (auto-detected).  
+- Seed docs stay in the repo: `data/sample_docs/`  
+- See `docs/RADEON_CLOUD_RUN.md` for `PLA_DATA_ROOT` / `HF_HOME`
 
 ---
 

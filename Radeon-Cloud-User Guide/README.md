@@ -38,7 +38,10 @@ Choose a Container Image (required).
 
 ![Add Title & Container Image](./assets/add-template-form.png)
 
-If you want your files to persist, set **Storage** to **Persistent (PVC)** — its data is kept even after the instance is destroyed. 
+If you want your files to persist, set **Storage** to **Persistent (PVC)** — its data is kept even after the instance is destroyed.
+
+**Durable path (official, 2026-07+):** put long-lived data under **`/workspace/persistence`** (not only under the cloned repo).  
+PrivateLocalAgent uses `/workspace/persistence/PrivateLocalAgent` for KB/memory/uploads and recommends `HF_HOME=/workspace/persistence/huggingface` for models. See `docs/RADEON_CLOUD_RUN.md`.
 
 Click **Add Template** at the bottom to finish.
 

@@ -8,7 +8,10 @@
 cd /workspace/Radeon-hackathon-2026-07
 git checkout -- notebooks/private_agent_demo.ipynb
 git pull origin track2-private-local-agent
+export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
+export HF_HOME=/workspace/persistence/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
+python scripts/migrate_to_persistence.py
 python scripts/run_cloudflare_tunnel.py
 ```
 

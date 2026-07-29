@@ -14,6 +14,7 @@ Track 2, 说干就干, PrivateLocalAgent
 Fork: https://github.com/Wyf66669/Radeon-hackathon-2026-07  
 Branch with code: `track2-private-local-agent`  
 Upstream: https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07  
+Official PR: https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40  
 PR draft text: `docs/PR_BODY.md`
 
 ## Required materials (Track 2)
@@ -32,8 +33,8 @@ PR draft text: `docs/PR_BODY.md`
 | Privacy guard + audit | Done | `src/privacy/` |
 | ROCm bench | Done | `scripts/bench_rocm.py` |
 | 10k FAQ generator | Done | `scripts/generate_kb_faqs.py`, `docs/KB_10K.md` |
-| Demo video (3–5 min) | TODO | See `docs/DEMO_VIDEO_SCRIPT.md` |
-| Open PR to official repo | TODO | Use `docs/PR_BODY.md` |
+| Demo video (3–5 min) | Done | https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4 |
+| Open PR to official repo | Done | https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40 |
 
 ## Verified on Radeon Cloud (2026-07)
 
@@ -42,16 +43,20 @@ PR draft text: `docs/PR_BODY.md`
 - [x] CLI demo (`scripts/demo_cli.py`)
 - [x] Notebook one-cell visual chat (no tunnel)
 - [x] Mandatory `kb_search` + Chinese grounded answers
-- [ ] Demo video uploaded + linked in PR
-- [ ] PR opened to `AMD-DEV-CONTEST/Radeon-hackathon-2026-07`
+- [x] Demo video uploaded + linked in PR
+- [x] PR opened to `AMD-DEV-CONTEST/Radeon-hackathon-2026-07` (#40)
 
 ## Final submit steps
 
-1. `git pull` on cloud; run notebook visual demo; record 3–5 min video
-2. Upload video (Bilibili / YouTube / Drive) and paste URL into `docs/PR_BODY.md`
-3. On GitHub: compare `track2-private-local-agent` → open PR to official repo
-4. Title: `Track 2, 说干就干, PrivateLocalAgent`
-5. Destroy cloud instance after recording
+1. ~~Open PR~~ Done (#40, title correct)
+2. ~~Demo video~~ Done (Release `demo-v1`)
+3. Optional later: replace walkthrough MP4 with live Radeon Cloud screen recording if judges prefer raw footage
+4. Destroy cloud instance when idle to save credit
+
+## Certificates (AMD official)
+
+Valid submitted teams may receive a **Certificate of Completion**.  
+Final review may also award Gold / Silver / Bronze / **Excellent** certificates.
 
 ## Contact
 

@@ -24,6 +24,8 @@ cd /workspace/Radeon-hackathon-2026-07
 git checkout track2-private-local-agent
 source .venv/bin/activate
 export HF_ENDPOINT=https://hf-mirror.com
+export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
+export HF_HOME=/workspace/persistence/huggingface
 pip install -q Pillow rapidocr-onnxruntime
 python scripts/run_cloudflare_tunnel.py
 # or open notebooks/private_agent_demo.ipynb → Restart Kernel → Run the single cell
@@ -33,9 +35,9 @@ Docs: `README.md`, `docs/RADEON_CLOUD_RUN.md`, `docs/ARCHITECTURE.md`, `docs/AMD
 
 ### Demo video
 
-- URL: _(paste after recording)_  
-- Length: 3–5 minutes  
-- Shows: ROCm check, web/notebook chat, workflow build/export, vision OCR, grounded Chinese answers
+- URL: https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4  
+- Length: ~3.2 minutes (v2 visuals)  
+- Shows: Cloud ready → ROCm verify → Notebook UI → RAG `kb_search` Q&A → privacy Q&A → feature grid → architecture → closing
 
 ## Test plan
 

@@ -8,9 +8,11 @@ from typing import Any
 import yaml
 
 from src.agent.workflow_schema import normalize_workflow
-from src.config import ROOT
+from src.config import resolve_data_path
 
-WORKFLOWS_DIR = ROOT / "data" / "workflows"
+
+def workflows_dir() -> Path:
+    return resolve_data_path("data/workflows")
 
 # Built-in office templates (seeded to disk on first ensure)
 BUILTIN_WORKFLOWS: dict[str, dict[str, Any]] = {
@@ -65,7 +67,7 @@ BUILTIN_WORKFLOWS: dict[str, dict[str, Any]] = {
 
 class WorkflowRegistry:
     def __init__(self, directory: Path | None = None) -> None:
-        self.directory = directory or WORKFLOWS_DIR
+        self.directory = directory or workflows_dir()
         self.directory.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, dict[str, Any]] | None = None
 

@@ -7,6 +7,13 @@ from __future__ import annotations
 def main() -> None:
     print("=== PrivateLocalAgent · GPU / ROCm check ===")
     try:
+        from src.config import DEFAULT_PERSISTENCE_BASE, detect_data_root
+
+        print(f"data_root: {detect_data_root()}")
+        print(f"persistence_dir_exists: {DEFAULT_PERSISTENCE_BASE.is_dir()} ({DEFAULT_PERSISTENCE_BASE})")
+    except Exception as exc:  # noqa: BLE001
+        print(f"data_root check skipped: {exc}")
+    try:
         import torch
 
         print(f"torch: {torch.__version__}")
