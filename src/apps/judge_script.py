@@ -20,22 +20,25 @@ JUDGE_SEQUENCE: tuple[tuple[str, str], ...] = (
     ("rag", "请假需要提前几天申请？"),
 )
 
-STARTUP_COMMANDS = """cd /workspace/Radeon-hackathon-2026-07
+STARTUP_COMMANDS = """# Radeon Cloud → Open Notebook → notebooks/visual_no_tunnel.ipynb
+# Kernel → Restart Kernel → run the SINGLE code cell
+# (loads real orch → Doubao web → official rc-tunnel → iframe + public URL)
+
+# optional CLI twin of the demo video:
+cd /workspace/Radeon-hackathon-2026-07
+export GIT_SSL_NO_VERIFY=true
 git checkout track2-private-local-agent && git pull
 export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
 export HF_HOME=/workspace/persistence/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
-source .venv/bin/activate
 python scripts/verify_rocm.py
 python scripts/ingest_sample.py
 python scripts/demo_judge.py
-# Web（与视频同一套问题）:
-# PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py
 """
 
 VIDEO_URL = (
     "https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/"
-    "demo-v1/PrivateLocalAgent_demo.mp4"
+    "demo-v2/PrivateLocalAgent_demo.mp4"
 )
 PR_URL = "https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40"
 

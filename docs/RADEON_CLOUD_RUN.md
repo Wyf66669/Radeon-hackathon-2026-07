@@ -21,7 +21,7 @@ Checklist:
 
 1. Mutable data under **`/workspace/persistence`** (NFS PVC)
 2. Code **pushed** to GitHub (`Wyf66669/Radeon-hackathon-2026-07`)
-3. Demo video already on Release `demo-v1` (extra copy)
+3. Demo video already on Release `demo-v2` (extra copy)
 4. Optional: download a zip of `persistence/PrivateLocalAgent` to your laptop
 
 ---

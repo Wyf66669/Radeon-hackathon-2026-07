@@ -51,12 +51,11 @@ python scripts/bench_rocm.py
 python app.py
 ```
 
-**Primary contest demo:** `notebooks/private_agent_demo.ipynb` (chat UI inside JupyterLab, no rc-tunnel).  
+**Primary contest demo:** `notebooks/visual_no_tunnel.ipynb` (one cell → real agent UI + official `rc-tunnel`).  
 Bonus map: `docs/SCORING_BONUS.md`  
 Skills (generate real projects): `docs/SKILLS.md` · `python scripts/run_skill.py --list`  
 Six apps map: `docs/SIX_APPS.md` · `python scripts/demo_six_apps.py`  
-Doubao-style web + Cloudflare: `docs/CLOUDFLARE_TUNNEL.md` · `python scripts/run_cloudflare_tunnel.py`  
-**Fallback:** `python scripts/demo_cli.py`.  
+**Fallback CLI:** `python scripts/demo_judge.py`.  
 Details: `START_HERE.md` · `docs/JUDGE_DEMO.md` · Checklist: `docs/SUBMISSION_CHECKLIST.md` · PR text: `docs/PR_BODY.md`
 
 **Cloud backup (before 2026-07-31 18:00):** `python scripts/backup_to_persistence.py` then `git push`.

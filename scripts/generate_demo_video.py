@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demo video that mirrors docs/JUDGE_DEMO.md + scripts/demo_judge.py exactly."""
+"""Demo video that mirrors START_HERE.md / JUDGE_DEMO.md + demo_judge prompts."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 OUT_DIR = ROOT / "demo_assets"
 OUT_MP4 = OUT_DIR / "PrivateLocalAgent_demo.mp4"
 W, H = 1280, 720
-FPS = 12  # faster playback
+FPS = 12
 
 C_PANEL = (15, 23, 42)
 C_TEXT = (241, 245, 249)
@@ -24,13 +24,11 @@ C_ACCENT = (20, 184, 166)
 C_OK = (52, 211, 153)
 C_WARN = (251, 191, 36)
 
-
-# Same sequence as src/apps/judge_script.JUDGE_SEQUENCE (+ short expected answers for the video)
-from src.apps.judge_script import JUDGE_SEQUENCE  # noqa: E402
+from src.apps.judge_script import JUDGE_SEQUENCE, PR_URL, VIDEO_URL  # noqa: E402
 
 _ANSWERS = {
     "用三句话解释什么是私有本地 Agent": "私有本地 Agent 在本机完成推理与工具调用；优先本地知识库；数据默认不出域。",
-    "解析刚上传的图片": "OCR：请假需提前3个工作日申请；数据不出域 · 本地解析（judge_demo_ocr.png）。",
+    "解析刚上传的图片": "这是一张公司请假制度说明的照片，图中写明请假需提前 3 个工作日申请，相关信息已在本地完成 OCR 解析，数据不出域。",
     "记住我喜欢简洁中文回答": "已写入本地记忆（Saved fact）。",
     "涉密文档可以用哪些 AI 工具？": "仅允许 PrivateLocalAgent 或已批准的本地模型，禁止公有云粘贴涉密内容。",
     "设计工作流：新员工入职要开通VPN、邮箱和知识库权限": "已生成本地 YAML 工作流，并可导出 Dify/LangChain/JSON。",
@@ -99,16 +97,41 @@ def terminal_frame(Image, ImageDraw, ImageFont, title, lines, prog, label):
     y = 90
     for line in lines:
         color = C_MUTED
-        if line.startswith("$") or line.startswith("==="):
+        if line.startswith("$") or line.startswith("===") or line.startswith("Notebook"):
             color = C_ACCENT
-        elif any(k in line for k in ("True", "kb_search", "3 个工作日", "[ok]", "拦截", "Saved")):
+        elif any(k in line for k in ("True", "kb_search", "3 个工作日", "[ok]", "拦截", "Saved", "orch attached", "rc-")):
             color = C_OK
-        elif line.startswith("APP_MODE=") or line.startswith("Q:"):
+        elif line.startswith("APP_MODE=") or line.startswith("Q:") or line.startswith("Mode:"):
             color = C_WARN
         d.text((56, y), line[:110], fill=color, font=font(17, ImageFont))
         y += 24
         if y > H - 60:
             break
+    d.rectangle((0, H - 28, W, H), fill=(0, 0, 0))
+    d.rectangle((0, H - 28, int(W * prog), H), fill=C_ACCENT)
+    d.text((12, H - 24), label, fill=C_MUTED, font=font(13, ImageFont))
+    return img
+
+
+def ui_frame(Image, ImageDraw, ImageFont, mode: str, q: str, a: str, prog: float, label: str):
+    """Mock Doubao-style PrivateLocalAgent panel (matches notebook embed)."""
+    img = Image.new("RGB", (W, H), (11, 18, 32))
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, W, 56), fill=(15, 23, 42))
+    d.text((24, 14), "PrivateLocalAgent", fill=(153, 246, 228), font=font(24, ImageFont, True))
+    d.text((320, 20), "真实智能体 · AMD Radeon / ROCm · rc-tunnel", fill=C_MUTED, font=font(15, ImageFont))
+    d.rounded_rectangle((24, 76, W - 24, H - 90), radius=14, fill=(15, 23, 42), outline=(51, 65, 85), width=2)
+    d.text((44, 94), f"模式: {mode}", fill=C_ACCENT, font=font(16, ImageFont, True))
+    d.rounded_rectangle((44, 130, W - 44, 210), radius=10, fill=(20, 184, 166))
+    y = 142
+    for line in wrap(f"你: {q}", 70)[:3]:
+        d.text((58, y), line, fill=(4, 47, 46), font=font(16, ImageFont))
+        y += 22
+    d.rounded_rectangle((44, 230, W - 44, H - 120), radius=10, fill=(31, 41, 55))
+    y = 244
+    for line in wrap(f"Agent: {a}", 72)[:8]:
+        d.text((58, y), line, fill=C_TEXT, font=font(16, ImageFont))
+        y += 22
     d.rectangle((0, H - 28, W, H), fill=(0, 0, 0))
     d.rectangle((0, H - 28, int(W * prog), H), fill=C_ACCENT)
     d.text((12, H - 24), label, fill=C_MUTED, font=font(13, ImageFont))
@@ -133,7 +156,7 @@ def typewriter(Image, ImageDraw, ImageFont, title, lines, seconds, prog, label):
             if n > target:
                 break
         frames.append(terminal_frame(Image, ImageDraw, ImageFont, title, shown, prog, label))
-    frames += hold(frames[-1], 0.5)
+    frames += hold(frames[-1], 0.45)
     return frames
 
 
@@ -185,57 +208,60 @@ def main():
     Image, ImageDraw, ImageFont = _ensure()
     frames = []
 
-    # 1) Exact judge startup (docs/JUDGE_DEMO.md)
     boot = [
-        "$ cd /workspace/Radeon-hackathon-2026-07",
-        "$ git checkout track2-private-local-agent && git pull",
-        "$ export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent",
-        "$ export HF_HOME=/workspace/persistence/huggingface",
-        "$ export HF_ENDPOINT=https://hf-mirror.com",
-        "$ source .venv/bin/activate",
-        "$ python scripts/verify_rocm.py",
-        "cuda_available: True",
-        "device0: AMD Radeon Graphics",
-        "$ python scripts/ingest_sample.py",
-        "[ingest] ok",
-        "$ python scripts/demo_judge.py",
-        "=== PrivateLocalAgent · Judge Demo (matches docs/JUDGE_DEMO.md) ===",
+        "Notebook: visual_no_tunnel.ipynb  (Radeon Cloud)",
+        "$ Kernel → Restart Kernel",
+        "$ Run the SINGLE code cell",
+        "[0] deps... ok",
+        "[1] knowledge base... chunks=ready",
+        "[2] load local LLM on Radeon/ROCm (real agent)...",
+        "ready — launching UI (web + rc-tunnel)",
+        "[ui] agent web ready on http://127.0.0.1:7900/ (orch attached)",
+        "[ui] public=https://rc-demo.radeon.firstdg.ai",
+        "PrivateLocalAgent UI embedded + external link open",
     ]
     frames += typewriter(
-        Image, ImageDraw, ImageFont, "Judge start · same as docs/JUDGE_DEMO.md", boot, 14, 0.12, "00:00  Boot"
+        Image,
+        ImageDraw,
+        ImageFont,
+        "Judge start · one Notebook cell (START_HERE.md)",
+        boot,
+        14,
+        0.12,
+        "00:00  Boot",
     )
 
-    # 2) Each APP_MODE block exactly like demo_judge.py stdout
     n = len(SCENES)
     for i, (mode, q, tools, ans) in enumerate(SCENES):
+        prog = 0.15 + 0.75 * (i + 1) / n
+        # brief terminal log then UI mock
         block = [
-            "=" * 64,
-            f"APP_MODE={mode}",
+            f"Mode: {mode}",
             f"Q: {q}",
             f"Tools: {tools}",
             f"A: {ans}",
         ]
-        prog = 0.15 + 0.75 * (i + 1) / n
         frames += typewriter(
             Image,
             ImageDraw,
             ImageFont,
-            f"demo_judge.py · {mode}",
+            f"Agent · {mode}",
             block,
-            12.5,
+            7.5,
             prog,
             f"{mode} ({i+1}/{n})",
         )
+        ui = ui_frame(Image, ImageDraw, ImageFont, mode, q, ans, prog, f"UI {i+1}/{n}")
+        frames += hold(ui, 3.2)
 
     end = [
         "[ok] judge demo finished — all modes exercised",
-        "Next (optional Web):",
-        "$ PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py",
-        "PR: https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40",
+        "Path: notebooks/visual_no_tunnel.ipynb (one cell)",
+        "UI: real orch + rc-tunnel (not tunnel-only demo)",
+        f"Video: {VIDEO_URL}",
+        f"PR: {PR_URL}",
     ]
-    frames += typewriter(
-        Image, ImageDraw, ImageFont, "Done · optional Web UI", end, 12, 1.0, "End"
-    )
+    frames += typewriter(Image, ImageDraw, ImageFont, "Done · Track 2 PrivateLocalAgent", end, 12, 1.0, "End")
 
     print(f"[info] frames={len(frames)} ~{len(frames)/FPS:.1f}s")
     encode(frames, OUT_MP4)

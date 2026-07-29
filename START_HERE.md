@@ -2,12 +2,13 @@
 
 **评委正确打开方式 = Radeon Cloud 的 Notebook（不是本机 127.0.0.1）。**
 
-- **视频：** https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4  
+- **视频：** https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v2/PrivateLocalAgent_demo.mp4  
 - **PR：** https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40  
+- **云平台：** https://radeon-global.anruicloud.com/  
 
 ---
 
-## 评委怎么启动（推荐）
+## 评委怎么启动（推荐 · 一个单元格）
 
 1. 登录 [Radeon Cloud](https://radeon-global.anruicloud.com/) → **Open Notebook**（JupyterLab）  
 2. 左侧文件树打开：
@@ -17,12 +18,20 @@ notebooks/visual_no_tunnel.ipynb
 ```
 
 3. 菜单 **Kernel → Restart Kernel**  
-4. 依次运行：
-   - **单元格 1** → 等到终端输出 `ready`（加载本地模型）  
-   - **单元格 2** → 出现可视化面板  
-5. 下拉选择模式，点**推荐问题**（与 Demo 视频同一套）→ **发送**
+4. 只运行 **那一个代码单元格** → 等到：
+   - 终端出现 `ready` / `agent web ready … (orch attached)`  
+   - 页面出现 **PrivateLocalAgent** 完整界面（iframe）+ 公网链接 `https://rc-*.radeon.firstdg.ai`  
+5. 在界面里选模式、点推荐问题、或上传图片测试（与 Demo 视频同一套）
 
-界面在 Jupyter 页面里，**不需要**再开 `http://127.0.0.1:7900`，也不需要 Cloudflare。
+本单元格会：加载真实本地智能体 → 启动 Doubao 风网页 → 官方 **`rc-tunnel`** 公网暴露 → 本页嵌入。
+
+若云上代码偏旧，Terminal 先跑：
+
+```bash
+bash scripts/prep_and_run_notebook.sh
+```
+
+然后回到 Notebook：**Restart Kernel** → 再跑那一个单元格。
 
 ---
 
@@ -40,7 +49,7 @@ export HF_HOME=/workspace/persistence/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
-然后回到文件树打开 `notebooks/visual_no_tunnel.ipynb`。
+然后打开 `notebooks/visual_no_tunnel.ipynb`。
 
 ---
 

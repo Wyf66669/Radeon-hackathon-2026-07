@@ -9,7 +9,7 @@ mkdir -p "$PLA_DATA_ROOT" "$HF_HOME" 2>/dev/null || true
 
 echo "=== PrivateLocalAgent · START (matches video / START_HERE.md) ==="
 echo "PR: https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40"
-echo "Video: https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4"
+echo "Video: https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v2/PrivateLocalAgent_demo.mp4"
 echo
 
 if [[ ! -d .venv ]]; then
