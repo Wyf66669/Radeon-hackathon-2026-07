@@ -146,25 +146,12 @@ class MultiAgentOrchestrator:
         args = {"name": name} if name else {}
         ocr = self.tools.run("parse_image", args).output
         used = ["orchestrator:vision", "parse_image"]
-        # Pure parse request — return OCR directly (fast)
-        if any(k in user_query for k in ["解析", "识别", "OCR", "ocr", "图里写了", "图片文字", "读图"]) and len(
-            user_query
-        ) < 40:
-            answer = ocr
-            self.agent.memory.append_history("user", user_query)
-            self.agent.memory.append_history("assistant", answer)
-            return self._wrap(
-                None,
-                answer=answer,
-                used=used,
-                route="vision",
-                plan=plan,
-                specialist="VisionParseAgent",
-                app_mode="vision",
-            )
         enriched = (
             f"{user_query}\n\n[image_ocr]\n{ocr}\n\n"
-            "请基于以上本地 OCR 结果回答；若文字不清请说明。不要编造图中没有的内容。"
+            "请基于以上本地 OCR 结果，用**一段通顺中文**回答（不要罗列引擎名、坐标、尺寸等技术字段）。\n"
+            "写法参考：「这是一张××的照片/证件，上面有××信息：……」\n"
+            "要求：说明这是什么图，再概括关键文字信息；不要编造 OCR 中没有的内容；"
+            "若文字不清请直接说明。"
         )
         result = self.agent.chat(enriched)
         return self._wrap(
