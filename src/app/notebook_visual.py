@@ -118,24 +118,36 @@ def _ensure_cloudflared() -> str | None:
     existing = shutil.which("cloudflared")
     if existing:
         return existing
-    for p in ("/usr/local/bin/cloudflared", "/usr/bin/cloudflared"):
+    for p in (
+        "/usr/local/bin/cloudflared",
+        "/usr/bin/cloudflared",
+    ):
         if Path(p).exists():
             return p
     root = Path(__file__).resolve().parents[2]
-    target = root / ".tools" / "cloudflared"
-    if target.exists() and target.stat().st_size > 1_000_000:
-        target.chmod(target.stat().st_mode | 0o111)
-        return str(target)
-    try:
-        from scripts.run_cloudflare_tunnel import ensure_cloudflared
-
-        return ensure_cloudflared()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[ui] cloudflared unavailable: {exc}", flush=True)
-        return None
+    candidates = [
+        root / ".tools" / "cloudflared",
+        root / "notebooks" / ".tools" / "cloudflared",
+    ]
+    for target in candidates:
+        if target.exists() and target.stat().st_size > 500_000:
+            try:
+                target.chmod(target.stat().st_mode | 0o111)
+            except Exception:
+                pass
+            return str(target)
+    # Do NOT auto-download here (SSL often hangs on Radeon Cloud).
+    print(
+        "[ui] cloudflared missing. In Terminal run:\n"
+        "  bash scripts/start_notebook_ui.sh",
+        flush=True,
+    )
+    return None
 
 
 def _start_tunnel(port: int) -> str | None:
+    if os.getenv("PLA_SKIP_TUNNEL", "0").lower() in {"1", "true", "yes"}:
+        return None
     if port in _TUNNEL_URLS:
         return _TUNNEL_URLS[port]
     bin_path = _ensure_cloudflared()
@@ -147,21 +159,23 @@ def _start_tunnel(port: int) -> str | None:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[ui] tunnel start failed: {exc}", flush=True)
         return None
     _TUNNEL_PROCS[port] = proc
     url = None
-    deadline = time.time() + 45
+    deadline = time.time() + 20
     assert proc.stdout is not None
     while time.time() < deadline:
         line = proc.stdout.readline()
         if not line and proc.poll() is not None:
             break
         if not line:
-            time.sleep(0.2)
+            time.sleep(0.15)
             continue
+        print(f"[tunnel] {line.rstrip()}", flush=True)
         m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
         if m:
             url = m.group(0)
@@ -170,7 +184,12 @@ def _start_tunnel(port: int) -> str | None:
         _TUNNEL_URLS[port] = url
         print(f"[ui] public={url}", flush=True)
     else:
-        print("[ui] tunnel URL not ready; iframe may need proxy/public link", flush=True)
+        print(
+            "[ui] tunnel slow/unavailable. Use Terminal instead:\n"
+            "  bash scripts/start_notebook_ui.sh\n"
+            "then open the printed https://….trycloudflare.com",
+            flush=True,
+        )
     return url
 
 
