@@ -6,7 +6,9 @@ Prompts match Demo video via src.apps.judge_script.JUDGE_SEQUENCE.
 
 from __future__ import annotations
 
+import re
 from html import escape
+from pathlib import Path
 from typing import Any, Callable
 
 from src.apps.judge_script import JUDGE_SEQUENCE, prompts_for_mode
@@ -94,11 +96,6 @@ CSS = """
   font-size: 12px;
   color: #94a3b8;
 }
-.pla-plan {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #fbbf24;
-}
 .pla-empty {
   color: #64748b;
   text-align: center;
@@ -108,10 +105,12 @@ CSS = """
 </style>
 """
 
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+
 
 def _bubbles_html(history: list[dict[str, Any]]) -> str:
     if not history:
-        return '<div class="pla-empty">选择模式 → 点推荐问题 → 发送</div>'
+        return '<div class="pla-empty">选择模式 → 可上传图片 → 点推荐问题 → 发送</div>'
     parts: list[str] = []
     for turn in history:
         q = escape(str(turn.get("q", "")))
@@ -145,6 +144,40 @@ def render_shell(history: list[dict[str, Any]], subtitle: str = "本地私有 Ag
 """
 
 
+def _safe_image_name(name: str) -> str:
+    base = Path(name or "upload.png").name
+    base = re.sub(r"[^\w.\-]+", "_", base, flags=re.UNICODE)
+    if Path(base).suffix.lower() not in _IMAGE_EXTS:
+        base = f"{Path(base).stem or 'upload'}.png"
+    return base[:120]
+
+
+def _fileupload_payload(value: Any) -> list[tuple[str, bytes]]:
+    """Normalize ipywidgets FileUpload value across v7/v8."""
+    out: list[tuple[str, bytes]] = []
+    if not value:
+        return out
+    # v7: dict[name -> {metadata, content}]
+    if isinstance(value, dict):
+        for name, meta in value.items():
+            content = meta.get("content") if isinstance(meta, dict) else None
+            if content is None:
+                continue
+            out.append((str(name), bytes(content)))
+        return out
+    # v8: tuple of UploadedFile / dict-like
+    for item in value:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "upload.png")
+            content = item.get("content") or b""
+            out.append((name, bytes(content)))
+        else:
+            name = str(getattr(item, "name", "upload.png"))
+            content = getattr(item, "content", b"")
+            out.append((name, bytes(content)))
+    return out
+
+
 class NotebookVisualChat:
     """Visual chat panel for Jupyter. Prefer widgets; HTML fallback always works."""
 
@@ -153,12 +186,41 @@ class NotebookVisualChat:
         runner: Any,
         plan_fn: Callable[[str], list[str]] | None = None,
         default_mode: str = "chat",
+        upload_dir: Path | str | None = None,
     ) -> None:
         # runner: MultiAgentOrchestrator or any object with .run(q, mode=...)
         self.runner = runner
         self.plan_fn = plan_fn
         self.mode = default_mode
         self.history: list[dict[str, Any]] = []
+        self.last_image: str | None = None
+        self.upload_dir = self._resolve_upload_dir(upload_dir)
+
+    def _resolve_upload_dir(self, upload_dir: Path | str | None) -> Path:
+        if upload_dir:
+            path = Path(upload_dir)
+        else:
+            tools = getattr(self.runner, "tools", None)
+            ud = getattr(tools, "upload_dir", None)
+            if ud:
+                path = Path(ud)
+            else:
+                from src.config import load_settings
+
+                path = load_settings().resolve("data/uploads")
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def save_upload(self, filename: str, content: bytes) -> Path:
+        if not content:
+            raise ValueError("空文件")
+        if len(content) > 12 * 1024 * 1024:
+            raise ValueError("图片过大（上限 12MB）")
+        name = _safe_image_name(filename)
+        target = self.upload_dir / name
+        target.write_bytes(content)
+        self.last_image = name
+        return target
 
     def _suggestions(self) -> list[str]:
         primary = prompts_for_mode(self.mode)
@@ -170,6 +232,10 @@ class NotebookVisualChat:
         query = (query or "").strip()
         if not query:
             raise ValueError("问题不能为空")
+        # Prefer the file just uploaded via the chat uploader.
+        if self.mode == "vision" and self.last_image and "解析" in query and Path(query).suffix == "":
+            # Keep natural prompt; parse_image picks newest mtime under upload_dir.
+            pass
         result = self.runner.run(query, mode=self.mode)
         turn = {
             "q": query,
@@ -219,6 +285,15 @@ class NotebookVisualChat:
             placeholder="输入问题…",
             layout=w.Layout(width="100%", height="72px"),
         )
+        uploader = w.FileUpload(
+            accept="image/png,image/jpeg,image/webp,image/bmp,.png,.jpg,.jpeg,.webp,.bmp",
+            multiple=False,
+            description="上传图片",
+            layout=w.Layout(width="220px"),
+        )
+        upload_hint = w.HTML(
+            value="<span style='color:#94a3b8;font-size:12px'>图文解析：先上传图片，再发送「解析刚上传的图片」</span>"
+        )
         btn = w.Button(description="发送", button_style="success")
         clear_btn = w.Button(description="清空对话")
         status = w.HTML(value="<span style='color:#94a3b8'>就绪</span>")
@@ -238,6 +313,31 @@ class NotebookVisualChat:
 
         def redraw() -> None:
             shell.value = render_shell(self.history)
+
+        def on_upload(change: dict[str, Any]) -> None:
+            if change.get("name") != "value":
+                return
+            files = _fileupload_payload(change.get("new"))
+            if not files:
+                return
+            name, content = files[-1]
+            try:
+                saved = self.save_upload(name, content)
+            except Exception as exc:  # noqa: BLE001
+                status.value = f"<span style='color:#f87171'>上传失败: {escape(str(exc))}</span>"
+                return
+            # Switch to vision and fill the judge prompt.
+            mode_dd.value = "vision"
+            self.mode = "vision"
+            refresh_tips()
+            box_q.value = "解析刚上传的图片"
+            status.value = (
+                f"<span style='color:#6ee7b7'>已上传 {escape(saved.name)} · "
+                "可直接点发送</span>"
+            )
+            upload_hint.value = (
+                f"<span style='color:#99f6e4;font-size:12px'>当前图片: {escape(saved.name)}</span>"
+            )
 
         def on_send(_: Any) -> None:
             q = box_q.value.strip()
@@ -263,6 +363,7 @@ class NotebookVisualChat:
 
         mode_dd.observe(refresh_tips, names="value")
         tips.observe(on_tip, names="value")
+        uploader.observe(on_upload, names="value")
         btn.on_click(on_send)
         clear_btn.on_click(on_clear)
 
@@ -271,6 +372,7 @@ class NotebookVisualChat:
                 shell,
                 mode_dd,
                 tips,
+                w.HBox([uploader, upload_hint]),
                 box_q,
                 w.HBox([btn, clear_btn]),
                 status,
@@ -285,8 +387,14 @@ def launch_notebook_visual(
     runner: Any,
     plan_fn: Callable[[str], list[str]] | None = None,
     default_mode: str = "chat",
+    upload_dir: Path | str | None = None,
 ) -> NotebookVisualChat:
     """runner = MultiAgentOrchestrator (preferred) or compatible .run(q, mode=...)."""
-    ui = NotebookVisualChat(runner, plan_fn=plan_fn, default_mode=default_mode)
+    ui = NotebookVisualChat(
+        runner,
+        plan_fn=plan_fn,
+        default_mode=default_mode,
+        upload_dir=upload_dir,
+    )
     ui.show()
     return ui
