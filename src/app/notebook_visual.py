@@ -111,10 +111,7 @@ CSS = """
 
 def _bubbles_html(history: list[dict[str, Any]]) -> str:
     if not history:
-        return (
-            '<div class="pla-empty">选择模式 → 点推荐问题（与 Demo 视频一致）→ 发送。<br/>'
-            "无需隧道 / 无需公网端口。</div>"
-        )
+        return '<div class="pla-empty">选择模式 → 点推荐问题 → 发送</div>'
     parts: list[str] = []
     for turn in history:
         q = escape(str(turn.get("q", "")))
@@ -131,7 +128,7 @@ def _bubbles_html(history: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-def render_shell(history: list[dict[str, Any]], subtitle: str = "Notebook 内可视化 · 与 Demo 视频同题") -> str:
+def render_shell(history: list[dict[str, Any]], subtitle: str = "本地私有 Agent") -> str:
     body = _bubbles_html(history)
     return f"""
 {CSS}
@@ -140,9 +137,8 @@ def render_shell(history: list[dict[str, Any]], subtitle: str = "Notebook 内可
   <p class="pla-sub">{escape(subtitle)}</p>
   <div class="pla-meta">
     <span class="pla-chip">Track 2</span>
-    <span class="pla-chip">Notebook 启动</span>
-    <span class="pla-chip">同视频题库</span>
-    <span class="pla-chip">无隧道</span>
+    <span class="pla-chip">Notebook</span>
+    <span class="pla-chip">Local / Private</span>
   </div>
   <div class="pla-chat">{body}</div>
 </div>
@@ -213,25 +209,28 @@ class NotebookVisualChat:
             layout=w.Layout(width="360px"),
         )
         shell = w.HTML(value=render_shell(self.history))
-        tips = w.ToggleButtons(options=self._suggestions(), description="")
+        tips = w.Dropdown(
+            options=self._suggestions() or [""],
+            description="推荐",
+            layout=w.Layout(width="100%"),
+        )
         box_q = w.Textarea(
             value=(self._suggestions()[0] if self._suggestions() else ""),
-            placeholder="输入问题…（推荐问题与 Demo 视频一致）",
+            placeholder="输入问题…",
             layout=w.Layout(width="100%", height="72px"),
         )
         btn = w.Button(description="发送", button_style="success")
         clear_btn = w.Button(description="清空对话")
-        status = w.HTML(
-            value="<span style='color:#94a3b8'>就绪 · Notebook 内运行 · 无需隧道</span>"
-        )
+        status = w.HTML(value="<span style='color:#94a3b8'>就绪</span>")
 
         def refresh_tips(_: Any = None) -> None:
             self.mode = str(mode_dd.value)
-            opts = self._suggestions()
+            opts = self._suggestions() or [""]
+            tips.unobserve(on_tip, names="value")
             tips.options = opts
-            if opts:
-                tips.value = opts[0]
-                box_q.value = opts[0]
+            tips.value = opts[0]
+            tips.observe(on_tip, names="value")
+            box_q.value = opts[0]
 
         def on_tip(change: dict[str, Any]) -> None:
             if change.get("name") == "value" and change.get("new"):
@@ -246,7 +245,7 @@ class NotebookVisualChat:
                 status.value = "<span style='color:#f59e0b'>请输入问题</span>"
                 return
             self.mode = str(mode_dd.value)
-            status.value = "<span style='color:#99f6e4'>思考中（本地推理约 30–90 秒）…</span>"
+            status.value = "<span style='color:#99f6e4'>思考中…</span>"
             btn.disabled = True
             try:
                 self._run(q)
@@ -271,10 +270,6 @@ class NotebookVisualChat:
             [
                 shell,
                 mode_dd,
-                w.HTML(
-                    "<div style='color:#94a3b8;font-size:12px;margin:8px 0 4px'>"
-                    "推荐问题（= Demo 视频 / START_HERE.md）</div>"
-                ),
                 tips,
                 box_q,
                 w.HBox([btn, clear_btn]),

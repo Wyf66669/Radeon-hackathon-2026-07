@@ -20,13 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.apps.modes import DEFAULT_MODE, UI_MODES, get_app_mode
-from src.apps.judge_script import (
-    JUDGE_SEQUENCE,
-    PR_URL,
-    VIDEO_URL,
-    judge_checklist_html_rows,
-    prompts_for_mode,
-)
+from src.apps.judge_script import prompts_for_mode
 
 SESSIONS: dict[str, dict] = {}
 CURRENT_ID = ""
@@ -204,32 +198,13 @@ def page(notice: str = "", q: str = "") -> bytes:
     if not hist_items:
         hist_items.append('<div class="nav muted">暂无对话记录</div>')
 
-    # Judge checklist — same 10 prompts as video / demo_judge.py
-    guide_rows = []
-    for i, (mid, title_cn, prompt) in enumerate(judge_checklist_html_rows(), 1):
-        guide_rows.append(
-            "<div class='gitem'>"
-            f"<button type='button' class='ggo' data-mode='{html.escape(mid)}' "
-            f"data-q=\"{html.escape(prompt, quote=True)}\">#{i} {html.escape(title_cn)}</button>"
-            f"<div class='gq'>{html.escape(prompt)}</div></div>"
-        )
-    guide_box = (
-        "<h3>评委清单（=视频）</h3>"
-        f"<div class='guide'>{''.join(guide_rows)}</div>"
-        f"<p class='glink'><a href='{html.escape(VIDEO_URL)}' target='_blank' rel='noopener'>Demo 视频</a>"
-        f" · <a href='{html.escape(PR_URL)}' target='_blank' rel='noopener'>PR</a></p>"
-        "<p class='gtip'>启动：bash scripts/start_for_judge.sh<br/>或见仓库 START_HERE.md</p>"
-    )
-
     if not READY:
         status = notice or ("模型加载中，请稍候自动刷新…" if LOADING else "正在准备模型…")
         if LOAD_ERROR:
             status = "模型加载失败，请查看终端日志后重试。"
         stage = (
             f'<div class="hero"><h1>PrivateLocalAgent</h1>'
-            f'<p>{html.escape(status)}</p>'
-            f'<pre class="boot">启动说明见左侧 / START_HERE.md\n'
-            f'CLI: python scripts/demo_judge.py</pre></div>'
+            f'<p>{html.escape(status)}</p></div>'
         )
     elif messages:
         rows = []
@@ -244,12 +219,11 @@ def page(notice: str = "", q: str = "") -> bytes:
             f'<button type="button" class="sug" data-q="{html.escape(s, quote=True)}">{html.escape(s)}</button>'
             for s in suggestions_for(mode)
         )
-        hint = "可上传图片做本地 OCR（与视频 vision 一致）" if mode == "vision" else "推荐问题与 Demo 视频一致"
+        hint = "可上传图片做本地 OCR" if mode == "vision" else html.escape(title)
         stage = f"""
         <div class="hero">
           <h1>有什么我能帮你的吗？</h1>
-          <p>PrivateLocalAgent · {html.escape(title)} · {hint}</p>
-          <p class="sync">本页推荐问题 = START_HERE.md = demo_judge.py = Demo 视频</p>
+          <p>PrivateLocalAgent · {hint}</p>
           <div class="sugs">{chips}</div>
         </div>"""
 
@@ -336,7 +310,6 @@ a.skill.on{{background:var(--soft);color:var(--accent);font-weight:700}}
   <aside class="side">
     <div class="brand">PrivateLocalAgent<small>Track 2 · 私有本地 Agent</small></div>
     <a class="btn-new" href="/?new=1">＋ 新对话</a>
-    {guide_box}
     <h3>对话记录</h3>
     {''.join(hist_items)}
   </aside>
@@ -696,9 +669,7 @@ def main() -> None:
     _new_session(DEFAULT_MODE)
     print("=" * 60, flush=True)
     print("PrivateLocalAgent Web UI", flush=True)
-    print(f">>> 打开网页: http://127.0.0.1:{port}", flush=True)
-    print(">>> 启动说明: START_HERE.md", flush=True)
-    print(">>> 评委清单在页面左侧（与 Demo 视频同一套问题）", flush=True)
+    print(f">>> http://127.0.0.1:{port}", flush=True)
     print("=" * 60, flush=True)
     if DEMO_TOKEN:
         print("[security] PLA_DEMO_TOKEN enabled — send header X-PLA-Token on API calls")
