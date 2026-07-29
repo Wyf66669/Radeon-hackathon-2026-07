@@ -1,13 +1,16 @@
 """Notebook-native visual chat UI (no tunnel / no public port).
 
-Runs inside JupyterLab via IPython display + optional ipywidgets.
-The browser talks to the notebook kernel WebSocket only — no rc-tunnel, no /proxy.
+Primary judge path on Radeon Cloud: open notebooks/visual_no_tunnel.ipynb
+Prompts match Demo video via src.apps.judge_script.JUDGE_SEQUENCE.
 """
 
 from __future__ import annotations
 
 from html import escape
 from typing import Any, Callable
+
+from src.apps.judge_script import JUDGE_SEQUENCE, prompts_for_mode
+from src.apps.modes import UI_MODES
 
 CSS = """
 <style>
@@ -108,25 +111,27 @@ CSS = """
 
 def _bubbles_html(history: list[dict[str, Any]]) -> str:
     if not history:
-        return '<div class="pla-empty">输入问题后点击发送。推荐问题可一键填入。</div>'
+        return (
+            '<div class="pla-empty">选择模式 → 点推荐问题（与 Demo 视频一致）→ 发送。<br/>'
+            "无需隧道 / 无需公网端口。</div>"
+        )
     parts: list[str] = []
     for turn in history:
         q = escape(str(turn.get("q", "")))
         a = escape(str(turn.get("a", "")))
         tools = escape(", ".join(turn.get("tools") or []) or "—")
-        plan = escape(" → ".join(turn.get("plan") or []) or "—")
+        mode = escape(str(turn.get("mode") or "—"))
         parts.append(f'<div class="pla-row user"><div class="pla-bubble user">{q}</div></div>')
         parts.append(
             "<div class='pla-row bot'><div class='pla-bubble bot'>"
             f"{a}"
-            f"<div class='pla-tools'>Tools: {tools}</div>"
-            f"<div class='pla-plan'>Plan: {plan}</div>"
+            f"<div class='pla-tools'>Mode: {mode} · Tools: {tools}</div>"
             "</div></div>"
         )
     return "\n".join(parts)
 
 
-def render_shell(history: list[dict[str, Any]], subtitle: str = "Notebook 内可视化 · 无需隧道/代理") -> str:
+def render_shell(history: list[dict[str, Any]], subtitle: str = "Notebook 内可视化 · 与 Demo 视频同题") -> str:
     body = _bubbles_html(history)
     return f"""
 {CSS}
@@ -135,8 +140,8 @@ def render_shell(history: list[dict[str, Any]], subtitle: str = "Notebook 内可
   <p class="pla-sub">{escape(subtitle)}</p>
   <div class="pla-meta">
     <span class="pla-chip">Track 2</span>
-    <span class="pla-chip">本地 RAG</span>
-    <span class="pla-chip">工具调用</span>
+    <span class="pla-chip">Notebook 启动</span>
+    <span class="pla-chip">同视频题库</span>
     <span class="pla-chip">无隧道</span>
   </div>
   <div class="pla-chat">{body}</div>
@@ -147,43 +152,43 @@ def render_shell(history: list[dict[str, Any]], subtitle: str = "Notebook 内可
 class NotebookVisualChat:
     """Visual chat panel for Jupyter. Prefer widgets; HTML fallback always works."""
 
-    SUGGESTIONS = [
-        "VPN 密码怎么重置？",
-        "涉密文档可以用哪些 AI 工具？",
-        "请假需要提前几天申请？",
-        "GPU 推理环境有什么要求？",
-        "知识库里有哪些 IT FAQ？",
-    ]
-
     def __init__(
         self,
-        agent: Any,
+        runner: Any,
         plan_fn: Callable[[str], list[str]] | None = None,
+        default_mode: str = "chat",
     ) -> None:
-        self.agent = agent
+        # runner: MultiAgentOrchestrator or any object with .run(q, mode=...)
+        self.runner = runner
         self.plan_fn = plan_fn
+        self.mode = default_mode
         self.history: list[dict[str, Any]] = []
-        self._out = None
+
+    def _suggestions(self) -> list[str]:
+        primary = prompts_for_mode(self.mode)
+        if primary:
+            return primary
+        return [q for _, q in JUDGE_SEQUENCE[:5]]
 
     def _run(self, query: str) -> dict[str, Any]:
         query = (query or "").strip()
         if not query:
             raise ValueError("问题不能为空")
-        plan = self.plan_fn(query) if self.plan_fn else []
-        result = self.agent.run(query)
+        result = self.runner.run(query, mode=self.mode)
         turn = {
             "q": query,
-            "a": result.answer,
-            "tools": list(result.used_tools or []),
-            "plan": list(plan or []),
+            "a": getattr(result, "answer", str(result)),
+            "tools": list(getattr(result, "used_tools", None) or []),
+            "mode": getattr(result, "app_mode", None) or self.mode,
         }
         self.history.append(turn)
         return turn
 
-    def ask(self, query: str) -> None:
-        """Non-widget API: run question and redraw HTML panel."""
+    def ask(self, query: str, mode: str | None = None) -> None:
         from IPython.display import HTML, clear_output, display
 
+        if mode:
+            self.mode = mode
         clear_output(wait=True)
         display(HTML(render_shell(self.history, subtitle="处理中…")))
         self._run(query)
@@ -191,30 +196,42 @@ class NotebookVisualChat:
         display(HTML(render_shell(self.history)))
 
     def show(self) -> None:
-        """Launch interactive UI inside the notebook (no tunnel)."""
         from IPython.display import HTML, clear_output, display
 
         try:
             import ipywidgets as w
         except Exception as exc:  # noqa: BLE001
             display(HTML(render_shell(self.history)))
-            print("ipywidgets 不可用，改用 ui.ask('你的问题')。原因:", exc)
+            print("ipywidgets 不可用，改用 ui.ask('问题', mode='rag')。原因:", exc)
             return
 
-        shell = w.HTML(value=render_shell(self.history))
-        box_q = w.Textarea(
-            value=self.SUGGESTIONS[0],
-            placeholder="输入问题…",
-            layout=w.Layout(width="100%", height="72px"),
+        mode_labels = [(m.title, m.id) for m in UI_MODES]
+        mode_dd = w.Dropdown(
+            options=mode_labels,
+            value=self.mode if self.mode in {m.id for m in UI_MODES} else "chat",
+            description="模式",
+            layout=w.Layout(width="360px"),
         )
-        tips = w.ToggleButtons(
-            options=self.SUGGESTIONS,
-            description="",
-            style={"button_width": "auto"},
+        shell = w.HTML(value=render_shell(self.history))
+        tips = w.ToggleButtons(options=self._suggestions(), description="")
+        box_q = w.Textarea(
+            value=(self._suggestions()[0] if self._suggestions() else ""),
+            placeholder="输入问题…（推荐问题与 Demo 视频一致）",
+            layout=w.Layout(width="100%", height="72px"),
         )
         btn = w.Button(description="发送", button_style="success")
         clear_btn = w.Button(description="清空对话")
-        status = w.HTML(value="<span style='color:#94a3b8'>就绪 · 无需隧道</span>")
+        status = w.HTML(
+            value="<span style='color:#94a3b8'>就绪 · Notebook 内运行 · 无需隧道</span>"
+        )
+
+        def refresh_tips(_: Any = None) -> None:
+            self.mode = str(mode_dd.value)
+            opts = self._suggestions()
+            tips.options = opts
+            if opts:
+                tips.value = opts[0]
+                box_q.value = opts[0]
 
         def on_tip(change: dict[str, Any]) -> None:
             if change.get("name") == "value" and change.get("new"):
@@ -228,7 +245,8 @@ class NotebookVisualChat:
             if not q:
                 status.value = "<span style='color:#f59e0b'>请输入问题</span>"
                 return
-            status.value = "<span style='color:#99f6e4'>思考中（约 30–90 秒）…</span>"
+            self.mode = str(mode_dd.value)
+            status.value = "<span style='color:#99f6e4'>思考中（本地推理约 30–90 秒）…</span>"
             btn.disabled = True
             try:
                 self._run(q)
@@ -244,6 +262,7 @@ class NotebookVisualChat:
             redraw()
             status.value = "<span style='color:#94a3b8'>已清空</span>"
 
+        mode_dd.observe(refresh_tips, names="value")
         tips.observe(on_tip, names="value")
         btn.on_click(on_send)
         clear_btn.on_click(on_clear)
@@ -251,7 +270,11 @@ class NotebookVisualChat:
         ui = w.VBox(
             [
                 shell,
-                w.HTML("<div style='color:#94a3b8;font-size:12px;margin:8px 0 4px'>推荐问题</div>"),
+                mode_dd,
+                w.HTML(
+                    "<div style='color:#94a3b8;font-size:12px;margin:8px 0 4px'>"
+                    "推荐问题（= Demo 视频 / START_HERE.md）</div>"
+                ),
                 tips,
                 box_q,
                 w.HBox([btn, clear_btn]),
@@ -263,7 +286,12 @@ class NotebookVisualChat:
         display(ui)
 
 
-def launch_notebook_visual(agent: Any, plan_fn: Callable[[str], list[str]] | None = None) -> NotebookVisualChat:
-    ui = NotebookVisualChat(agent, plan_fn=plan_fn)
+def launch_notebook_visual(
+    runner: Any,
+    plan_fn: Callable[[str], list[str]] | None = None,
+    default_mode: str = "chat",
+) -> NotebookVisualChat:
+    """runner = MultiAgentOrchestrator (preferred) or compatible .run(q, mode=...)."""
+    ui = NotebookVisualChat(runner, plan_fn=plan_fn, default_mode=default_mode)
     ui.show()
     return ui

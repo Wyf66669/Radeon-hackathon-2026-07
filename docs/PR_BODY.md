@@ -27,23 +27,18 @@ Copy this into the GitHub PR against `AMD-DEV-CONTEST/Radeon-hackathon-2026-07`.
 - Privacy guard + optional audit trail for enterprise use  
 - ROCm verify + latency bench scripts for scoring evidence  
 
-### How to run (Radeon Cloud) — same as Demo video
+### How to run (Radeon Cloud) — Notebook first (same prompts as Demo video)
+
+1. Open JupyterLab → `notebooks/visual_no_tunnel.ipynb`  
+2. **Kernel → Restart Kernel**  
+3. Run cell 1 until `ready`, then cell 2 → pick mode → click suggested prompts  
 
 ```bash
-cd /workspace/Radeon-hackathon-2026-07
-git checkout track2-private-local-agent
-source .venv/bin/activate
-export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
-export HF_HOME=/workspace/persistence/huggingface
-export HF_ENDPOINT=https://hf-mirror.com
-pip install -q Pillow rapidocr-onnxruntime
-python scripts/verify_rocm.py
-python scripts/ingest_sample.py
+# optional CLI twin of the video:
 python scripts/demo_judge.py
-# optional Web: PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py
 ```
 
-Docs: `docs/JUDGE_DEMO.md`, `README.md`, `docs/RADEON_CLOUD_RUN.md`, `docs/ARCHITECTURE.md`, `docs/AMD_ROCM_OPTIMIZATION.md`
+Guide: `START_HERE.md` · `docs/JUDGE_DEMO.md`
 
 **Ops note:** before **2026-07-31 18:00 UTC+8** platform maintenance, run `python scripts/backup_to_persistence.py` and keep code pushed to GitHub (`/workspace/persistence` NFS).
 

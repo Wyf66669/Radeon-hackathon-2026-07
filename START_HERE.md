@@ -1,93 +1,68 @@
-# 启动说明 · PrivateLocalAgent（评委 / Demo）
+# 启动说明 · PrivateLocalAgent
 
-视频、CLI、网页测试页使用**同一套问题**（见 `src/apps/judge_script.py`）。
+**评委正确打开方式 = Radeon Cloud 的 Notebook（不是本机 127.0.0.1）。**
 
 - **视频：** https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4  
 - **PR：** https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40  
 
 ---
 
-## 打开什么网页？
+## 评委怎么启动（推荐）
 
-| 场景 | 打开这个地址 |
-|------|----------------|
-| **本机 Windows** | **http://127.0.0.1:7900** |
-| **Radeon Cloud + 隧道** | 终端打印的 **`https://xxxx.trycloudflare.com`** |
+1. 登录 [Radeon Cloud](https://radeon-global.anruicloud.com/) → **Open Notebook**（JupyterLab）  
+2. 左侧文件树打开：
 
-本机一键（会自动开浏览器）：
+```text
+notebooks/visual_no_tunnel.ipynb
+```
+
+3. 菜单 **Kernel → Restart Kernel**  
+4. 依次运行：
+   - **单元格 1** → 等到终端输出 `ready`（加载本地模型）  
+   - **单元格 2** → 出现可视化面板  
+5. 下拉选择模式，点**推荐问题**（与 Demo 视频同一套）→ **发送**
+
+界面在 Jupyter 页面里，**不需要**再开 `http://127.0.0.1:7900`，也不需要 Cloudflare。
+
+---
+
+## 首次拉代码（若云上还没有仓库）
+
+在 JupyterLab → **Terminal**：
+
+```bash
+cd /workspace
+export GIT_SSL_NO_VERIFY=true
+git clone -b track2-private-local-agent https://github.com/Wyf66669/Radeon-hackathon-2026-07.git
+cd Radeon-hackathon-2026-07
+export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
+export HF_HOME=/workspace/persistence/huggingface
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+然后回到文件树打开 `notebooks/visual_no_tunnel.ipynb`。
+
+---
+
+## 可选：命令行对齐视频
+
+```bash
+python scripts/demo_judge.py
+```
+
+---
+
+## 本机 Windows（仅开发预览，非评委主路径）
 
 ```bat
 scripts\start_web.bat
 ```
 
-云上一键网页：
-
-```bash
-bash scripts/start_for_judge.sh
-PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py
-# 然后打开终端里出现的 https://xxxx.trycloudflare.com
-```
-
-网页左侧「评委清单」#1→#10 = 视频同款问题。
+打开 http://127.0.0.1:7900  
 
 ---
 
-## Radeon Cloud（推荐）
-
-在 JupyterLab → **Terminal** 粘贴：
-
-```bash
-cd /workspace/Radeon-hackathon-2026-07
-git fetch origin track2-private-local-agent
-git checkout track2-private-local-agent
-git pull origin track2-private-local-agent
-
-export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
-export HF_HOME=/workspace/persistence/huggingface
-export HF_ENDPOINT=https://hf-mirror.com
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -q Pillow rapidocr-onnxruntime
-
-python scripts/verify_rocm.py
-python scripts/ingest_sample.py
-python scripts/demo_judge.py
-```
-
-看到 `[ok] judge demo finished — all modes exercised` 即与视频一致。
-
-### 打开与视频一致的网页测试页
-
-```bash
-PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py
-```
-
-浏览器打开终端里的 `https://xxxx.trycloudflare.com`：
-
-1. 底部模式芯片按视频顺序切换：对话 → 图文 → 生产力 → 企业 → 工作流 → RAG → 开发 → 多代理  
-2. 空白页上的**推荐问题**就是视频里的同一句（点一下即发送）  
-3. 左侧「评委清单」可按 1→10 逐条点测  
-
----
-
-## 本地 Windows
-
-```powershell
-cd track2-private-local-agent
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-python scripts/demo_judge.py
-python scripts/web_http_demo.py
-# 打开 http://127.0.0.1:7900
-```
-
----
-
-## 与视频对应的 10 条（勿改措辞）
+## 与视频对应的 10 条问题
 
 | # | 模式 | 问题 |
 |---|------|------|
