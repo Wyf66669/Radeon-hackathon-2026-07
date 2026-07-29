@@ -76,10 +76,11 @@ class LazyVectorStore:
 
 def _new_session(mode: str = DEFAULT_MODE) -> str:
     global CURRENT_ID, MODE
-    sid = uuid.uuid4().hex[:8]
+    sid = uuid.uuid4().hex  # full 128-bit hex
     MODE = mode if mode in _MODE_IDS else DEFAULT_MODE
-    SESSIONS[sid] = {"title": "新对话", "mode": MODE, "messages": []}
-    CURRENT_ID = sid
+    with _lock:
+        SESSIONS[sid] = {"title": "新对话", "mode": MODE, "messages": []}
+        CURRENT_ID = sid
     return sid
 
 
@@ -143,9 +144,27 @@ def suggestions_for(mode: str) -> list[str]:
     return ["你好，介绍一下你自己", "解析刚上传的图片", "帮我润色一句话"]
 
 
+MAX_UPLOAD_BYTES = int(os.getenv("PLA_MAX_UPLOAD_MB", "10")) * 1024 * 1024
+DEMO_TOKEN = os.getenv("PLA_DEMO_TOKEN", "").strip()
+
+
+def _check_token(handler: BaseHTTPRequestHandler, data: dict | None = None) -> bool:
+    if not DEMO_TOKEN:
+        return True
+    hdr = (handler.headers.get("X-PLA-Token") or "").strip()
+    body_tok = ""
+    if isinstance(data, dict):
+        body_tok = str(data.get("token") or "").strip()
+    return hdr == DEMO_TOKEN or body_tok == DEMO_TOKEN
+
+
 def _save_upload(filename: str, data: bytes) -> Path:
     assert UPLOAD_DIR is not None
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"file too large (max {MAX_UPLOAD_BYTES // (1024*1024)}MB)")
     safe = re.sub(r"[^\w.\-]+", "_", Path(filename).name) or f"img_{uuid.uuid4().hex[:8]}.png"
+    if ".." in safe:
+        raise ValueError("invalid filename")
     path = UPLOAD_DIR / safe
     path.write_bytes(data)
     return path
@@ -170,7 +189,7 @@ def page(notice: str = "", q: str = "") -> bytes:
     if not READY:
         status = notice or ("模型加载中，请稍候自动刷新…" if LOADING else "正在准备模型…")
         if LOAD_ERROR:
-            status = "模型加载失败：\n" + LOAD_ERROR
+            status = "模型加载失败，请查看终端日志后重试。"
         stage = f'<div class="hero"><h1>PrivateLocalAgent</h1><p>{html.escape(status)}</p></div>'
     elif messages:
         rows = []
@@ -384,7 +403,9 @@ document.getElementById('file').addEventListener('change', async (e) => {{
 
 
 def _read_json(handler: BaseHTTPRequestHandler) -> dict:
-    length = int(handler.headers.get("Content-Length", "0"))
+    length = int(handler.headers.get("Content-Length", "0") or 0)
+    if length > MAX_UPLOAD_BYTES:
+        return {"_error": "payload too large"}
     raw = handler.rfile.read(length).decode("utf-8", errors="ignore") if length else "{}"
     try:
         return json.loads(raw or "{}")
@@ -395,7 +416,9 @@ def _read_json(handler: BaseHTTPRequestHandler) -> dict:
 def _read_multipart(handler: BaseHTTPRequestHandler) -> tuple[str, bytes, dict]:
     """Return filename, file bytes, form fields."""
     ctype = handler.headers.get("Content-Type", "")
-    length = int(handler.headers.get("Content-Length", "0"))
+    length = int(handler.headers.get("Content-Length", "0") or 0)
+    if length > MAX_UPLOAD_BYTES + 64_000:
+        return "", b"", {"_error": "payload too large"}
     body = handler.rfile.read(length)
     m = re.search(r"boundary=(.+)", ctype)
     if not m:
@@ -451,11 +474,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/clear":
             data = _read_json(self)
-            sid = data.get("sid") or CURRENT_ID
-            if sid in SESSIONS:
-                SESSIONS[sid]["messages"] = []
-                SESSIONS[sid]["title"] = "新对话"
-                CURRENT_ID = sid
+            if not _check_token(self, data):
+                self._json({"ok": False, "error": "unauthorized"}, 401)
+                return
+            with _lock:
+                sid = data.get("sid") or CURRENT_ID
+                if sid in SESSIONS:
+                    SESSIONS[sid]["messages"] = []
+                    SESSIONS[sid]["title"] = "新对话"
+                    CURRENT_ID = sid
             self._json({"ok": True})
             return
 
@@ -464,44 +491,65 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "服务未就绪"}, 503)
                 return
             filename, data, fields = _read_multipart(self)
+            if fields.get("_error"):
+                self._json({"ok": False, "error": fields["_error"]}, 413)
+                return
+            if not _check_token(self, fields):
+                self._json({"ok": False, "error": "unauthorized"}, 401)
+                return
             if not data:
                 self._json({"ok": False, "error": "空文件"}, 400)
                 return
-            saved = _save_upload(filename, data)
-            sid = fields.get("sid") or CURRENT_ID
-            mode = fields.get("mode") or MODE
-            if sid in SESSIONS:
-                CURRENT_ID = sid
-            if mode in _MODE_IDS:
-                MODE = mode
+            try:
+                saved = _save_upload(filename, data)
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+                return
+            with _lock:
+                sid = fields.get("sid") or CURRENT_ID
+                mode = fields.get("mode") or MODE
                 if sid in SESSIONS:
-                    SESSIONS[sid]["mode"] = mode
-            self._json({"ok": True, "name": saved.name, "path": str(saved)})
+                    CURRENT_ID = sid
+                if mode in _MODE_IDS:
+                    MODE = mode
+                    if sid in SESSIONS:
+                        SESSIONS[sid]["mode"] = mode
+            self._json({"ok": True, "name": saved.name})
             return
 
         if path == "/api/chat":
             data = _read_json(self)
-            sid = data.get("sid") or CURRENT_ID
-            mode = data.get("mode") or MODE
-            q = (data.get("q") or "").strip()
-            if sid in SESSIONS:
-                CURRENT_ID = sid
-            else:
-                sid = _ensure_session()
-            if mode in _MODE_IDS:
-                MODE = mode
-                SESSIONS[sid]["mode"] = mode
+            if data.get("_error"):
+                self._json({"error": data["_error"]}, 413)
+                return
+            if not _check_token(self, data):
+                self._json({"error": "unauthorized"}, 401)
+                return
+            with _lock:
+                sid = data.get("sid") or CURRENT_ID
+                mode = data.get("mode") or MODE
+                q = (data.get("q") or "").strip()
+                if sid in SESSIONS:
+                    CURRENT_ID = sid
+                else:
+                    sid = _ensure_session()
+                if mode in _MODE_IDS:
+                    MODE = mode
+                    SESSIONS[sid]["mode"] = mode
             if not READY or ORCH is None:
                 self._json({"error": "模型还在加载，请稍后再发送。"}, 503)
                 return
             if not q:
                 self._json({"answer": ""})
                 return
-            # vision keywords auto-route even outside vision chip when image mentioned
+            if len(q) > 8000:
+                self._json({"error": "问题过长"}, 400)
+                return
             result = ORCH.run(q, mode=MODE)
-            SESSIONS[sid]["messages"].append((q, result.answer))
-            if SESSIONS[sid]["title"] in {"", "新对话"}:
-                SESSIONS[sid]["title"] = q[:18] + ("…" if len(q) > 18 else "")
+            with _lock:
+                SESSIONS[sid]["messages"].append((q, result.answer))
+                if SESSIONS[sid]["title"] in {"", "新对话"}:
+                    SESSIONS[sid]["title"] = q[:18] + ("…" if len(q) > 18 else "")
             self._json({"answer": result.answer})
             return
 
@@ -564,11 +612,20 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    host = os.getenv("HTTP_HOST", "0.0.0.0")
+    # Default localhost-only. Set PLA_ALLOW_PUBLIC=1 (and preferably PLA_DEMO_TOKEN) for tunnel demos.
+    allow_public = os.getenv("PLA_ALLOW_PUBLIC", "0").lower() in {"1", "true", "yes"}
+    host = os.getenv("HTTP_HOST", "0.0.0.0" if allow_public else "127.0.0.1")
+    if host in {"0.0.0.0", "::"} and not allow_public:
+        print("[security] refusing public bind without PLA_ALLOW_PUBLIC=1; using 127.0.0.1", flush=True)
+        host = "127.0.0.1"
     port = int(os.getenv("HTTP_PORT", "7900"))
     _new_session(DEFAULT_MODE)
-    print(f"Studio UI: http://127.0.0.1:{port}")
-    print("Cloudflare: python scripts/run_cloudflare_tunnel.py")
+    print(f"Studio UI: http://127.0.0.1:{port} (bind={host})")
+    if DEMO_TOKEN:
+        print("[security] PLA_DEMO_TOKEN enabled — send header X-PLA-Token on API calls")
+    else:
+        print("[security] tip: set PLA_DEMO_TOKEN for tunnel demos")
+    print("Cloudflare: PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py")
     ensure_runtime_async()
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 

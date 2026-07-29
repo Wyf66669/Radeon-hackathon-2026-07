@@ -10,17 +10,20 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
     ("phone_cn", re.compile(r"\b1[3-9]\d{9}\b")),
     ("ipv4", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
+    ("password", re.compile(r"(?i)(password|passwd|pwd)\s*[:=]\s*\S+")),
 ]
 
 
 def redact_text(text: str) -> tuple[str, list[str]]:
     """Return redacted text and list of hit pattern names."""
     hits: list[str] = []
-    out = text
+    out = text or ""
     for name, pat in _PATTERNS:
         if pat.search(out):
             hits.append(name)
             if name == "api_key":
+                out = pat.sub(r"\1=[REDACTED]", out)
+            elif name == "password":
                 out = pat.sub(r"\1=[REDACTED]", out)
             else:
                 out = pat.sub("[REDACTED]", out)
@@ -28,16 +31,31 @@ def redact_text(text: str) -> tuple[str, list[str]]:
 
 
 def is_exfiltration_request(query: str) -> bool:
-    q = query.lower()
+    q = (query or "").lower()
     needles = [
         "发到微信",
+        "发微信",
+        "发到钉钉",
+        "发到企微",
         "上传到chatgpt",
+        "上传到 chatGPT",
         "发到公网",
+        "发给外部",
+        "发给外人",
+        "发到邮箱",
+        "发到 gmail",
         "paste to public",
         "send to gmail",
-        "发给外部",
+        "send to chatgpt",
+        "upload to chatgpt",
+        "upload to openai",
+        "post to pastebin",
+        "发到 telegram",
+        "发到 discord",
+        "外发敏感",
+        "泄露给",
     ]
-    return any(n in q for n in needles)
+    return any(n.lower() in q for n in needles)
 
 
 def privacy_block_message() -> str:

@@ -104,8 +104,13 @@ class WorkflowRegistry:
         return self.all().get(workflow_id)
 
     def save(self, workflow: dict[str, Any]) -> Path:
+        from src.security.paths import is_under, sanitize_id
+
         wf = normalize_workflow(workflow, str(workflow.get("id") or "custom"))
-        path = self.directory / f"{wf['id']}.yaml"
+        wf["id"] = sanitize_id(str(wf["id"]), "custom")
+        path = (self.directory / f"{wf['id']}.yaml").resolve()
+        if not is_under(path, self.directory):
+            raise ValueError("invalid workflow id path")
         path.write_text(
             yaml.safe_dump(wf, allow_unicode=True, sort_keys=False),
             encoding="utf-8",

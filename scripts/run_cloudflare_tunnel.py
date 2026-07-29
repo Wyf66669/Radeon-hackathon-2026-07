@@ -31,29 +31,36 @@ def _ensure_persistence_env(env: dict[str, str]) -> None:
     print(f"[persistence] HF_HOME={env['HF_HOME']}")
 
 
-def _download(url: str, target: Path) -> None:
-    """Download with several fallbacks (SSL issues common behind cloud proxies)."""
+def _download(url: str, target: Path, *, allow_insecure: bool = False) -> None:
+    """Download cloudflared. Prefer TLS verify; insecure only as explicit fallback."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    # 1) curl (often works when Python SSL fails)
     curl = shutil.which("curl")
     if curl:
         cmd = [curl, "-fsSL", "-o", str(target), url]
-        # some lab proxies use self-signed MITM certs
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0 and target.exists() and target.stat().st_size > 1_000_000:
             return
-        r = subprocess.run([curl, "-kfsSL", "-o", str(target), url], capture_output=True, text=True)
-        if r.returncode == 0 and target.exists() and target.stat().st_size > 1_000_000:
-            return
+        if allow_insecure:
+            print("[cloudflare] WARNING: retrying download with TLS verify disabled", flush=True)
+            r = subprocess.run([curl, "-kfsSL", "-o", str(target), url], capture_output=True, text=True)
+            if r.returncode == 0 and target.exists() and target.stat().st_size > 1_000_000:
+                return
 
     wget = shutil.which("wget")
     if wget:
-        r = subprocess.run([wget, "--no-check-certificate", "-O", str(target), url], capture_output=True, text=True)
+        args = ["-O", str(target), url]
+        if allow_insecure:
+            args = ["--no-check-certificate", *args]
+            print("[cloudflare] WARNING: wget without certificate check", flush=True)
+        r = subprocess.run([wget, *args], capture_output=True, text=True)
         if r.returncode == 0 and target.exists() and target.stat().st_size > 1_000_000:
             return
 
-    # 2) urllib with unverified SSL context
-    ctx = ssl._create_unverified_context()
+    if allow_insecure:
+        print("[cloudflare] WARNING: urllib download with unverified TLS", flush=True)
+        ctx = ssl._create_unverified_context()
+    else:
+        ctx = ssl.create_default_context()
     with urllib.request.urlopen(url, context=ctx, timeout=120) as resp, target.open("wb") as f:
         shutil.copyfileobj(resp, f)
 
@@ -63,7 +70,6 @@ def ensure_cloudflared() -> str:
     if existing:
         return existing
 
-    # common package locations
     for p in ("/usr/local/bin/cloudflared", "/usr/bin/cloudflared"):
         if Path(p).exists():
             return p
@@ -80,30 +86,29 @@ def ensure_cloudflared() -> str:
             "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
         )
     else:
-        urls.extend(
-            [
-                "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
-                # mirror fallback
-                "https://ghproxy.com/https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
-            ]
+        urls.append(
+            "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
         )
 
     last_err: Exception | None = None
     for url in urls:
-        try:
-            print(f"[cloudflare] downloading {url}")
-            _download(url, target)
-            if os.name != "nt":
-                target.chmod(0o755)
-            if target.exists() and target.stat().st_size > 1_000_000:
-                return str(target)
-        except Exception as exc:  # noqa: BLE001
-            last_err = exc
-            print(f"[cloudflare] download failed: {exc}")
+        for insecure in (False, True):
+            try:
+                print(f"[cloudflare] downloading {url} (insecure={insecure})")
+                if target.exists():
+                    target.unlink()
+                _download(url, target, allow_insecure=insecure)
+                if os.name != "nt":
+                    target.chmod(0o755)
+                if target.exists() and target.stat().st_size > 1_000_000:
+                    return str(target)
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                print(f"[cloudflare] download failed: {exc}")
 
     raise RuntimeError(
-        "无法自动下载 cloudflared。请在终端手动安装后重试：\n"
-        "  curl -kL -o .tools/cloudflared "
+        "无法自动下载 cloudflared。请在终端手动安装官方二进制后重试（勿用不明镜像）。\n"
+        "  curl -L -o .tools/cloudflared "
         "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64\n"
         "  chmod +x .tools/cloudflared\n"
         f"原始错误: {last_err}"

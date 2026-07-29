@@ -124,8 +124,14 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
         if candidate.exists():
             overlay = str(candidate)
     if overlay:
-        op = Path(overlay)
-        if op.exists():
+        op = Path(overlay).expanduser().resolve()
+        configs_root = (ROOT / "configs").resolve()
+        try:
+            op.relative_to(configs_root)
+        except ValueError:
+            print(f"[config] ignoring overlay outside configs/: {op}", flush=True)
+            op = Path()
+        if op.exists() and op.is_file():
             with op.open("r", encoding="utf-8") as f:
                 extra = yaml.safe_load(f) or {}
             data = _deep_merge(data, extra)

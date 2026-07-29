@@ -15,7 +15,6 @@ ALLOWED_TOOLS = {
     "kb_stats",
     "list_workflows",
     "list_skills",
-    "run_skill",
     "parse_image",
 }
 
@@ -58,7 +57,9 @@ def normalize_step(raw: Any, index: int = 0) -> dict[str, Any]:
 
 
 def normalize_workflow(raw: dict[str, Any], fallback_id: str = "custom") -> dict[str, Any]:
-    wid = str(raw.get("id") or fallback_id).strip() or fallback_id
+    from src.security.paths import sanitize_id
+
+    wid = sanitize_id(str(raw.get("id") or fallback_id).strip() or fallback_id, fallback_id)
     steps_in = raw.get("steps") or []
     steps = [normalize_step(s, i) for i, s in enumerate(steps_in)]
     if not steps:

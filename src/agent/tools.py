@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.memory.memory import SessionMemory
+from src.privacy.guard import redact_text
 from src.rag.store import VectorStore
+from src.security.paths import safe_join
 
 
 @dataclass
@@ -80,7 +82,8 @@ class ToolRegistry:
             output = f"Bad arguments for {name}: {exc}"
         except Exception as exc:  # noqa: BLE001
             output = f"Tool error ({name}): {exc}"
-        return ToolResult(name=name, output=str(output))
+        safe, _ = redact_text(str(output))
+        return ToolResult(name=name, output=safe)
 
     def kb_search(self, query: str) -> str:
         hits = self.store.search(query)
@@ -88,7 +91,8 @@ class ToolRegistry:
             return "No documents in knowledge base. Please ingest sample docs or upload files."
         lines = []
         for i, h in enumerate(hits, 1):
-            lines.append(f"[{i}] source={h.source} score={h.score:.3f}\n{h.text}")
+            text, _ = redact_text(h.text)
+            lines.append(f"[{i}] source={h.source} score={h.score:.3f}\n{text}")
         return "\n\n".join(lines)
 
     def list_files(self) -> str:
@@ -96,19 +100,21 @@ class ToolRegistry:
         return json.dumps(files, ensure_ascii=False)
 
     def read_file(self, name: str) -> str:
-        path = (self.upload_dir / name).resolve()
-        if not str(path).startswith(str(self.upload_dir.resolve())):
+        path = safe_join(self.upload_dir, name)
+        if path is None:
             return "Access denied."
-        if not path.exists():
-            return f"File not found: {name}"
+        if not path.exists() or not path.is_file():
+            return f"File not found: {Path(name).name}"
         text = path.read_text(encoding="utf-8", errors="ignore")
         return text[:4000]
 
     def write_note(self, note: str) -> str:
-        return self.memory.add_note(note)
+        safe, _ = redact_text(note)
+        return self.memory.add_note(safe)
 
     def save_fact(self, fact: str) -> str:
-        return self.memory.add_fact(fact)
+        safe, _ = redact_text(fact)
+        return self.memory.add_fact(safe)
 
     def recall_memory(self) -> str:
         return self.memory.recall()
@@ -150,7 +156,6 @@ class ToolRegistry:
 
         target = (path or name or "").strip()
         if not target:
-            # latest image in upload dir
             imgs = sorted(
                 (p for p in self.upload_dir.iterdir() if p.is_file() and is_image_path(p)),
                 key=lambda p: p.stat().st_mtime,
@@ -160,13 +165,14 @@ class ToolRegistry:
                 return "未找到图片。请先上传 png/jpg/webp 到上传目录，或指定 name。"
             target_path = imgs[0]
         else:
-            target_path = Path(target)
-            if not target_path.is_absolute():
-                target_path = (self.upload_dir / target).resolve()
-            if not str(target_path).startswith(str(self.upload_dir.resolve())):
+            # never honor absolute paths — basename under upload_dir only
+            target_path = safe_join(self.upload_dir, Path(target).name)
+            if target_path is None:
                 return "Access denied."
-            if not target_path.exists():
-                return f"图片不存在: {target}"
+            if not target_path.exists() or not target_path.is_file():
+                return f"图片不存在: {Path(target).name}"
+            if not is_image_path(target_path):
+                return "仅支持图片文件。"
         return parse_image_to_text(target_path)
 
     def list_skills(self) -> str:
@@ -182,14 +188,17 @@ class ToolRegistry:
         return result.as_text()
 
 
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+_JSON_RE = re.compile(r"\{.*?\}", re.DOTALL)
 
 
 def extract_json_action(text: str) -> dict | None:
-    match = _JSON_RE.search(text)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
+    # Prefer the last JSON-looking object (models often narrate then emit JSON).
+    matches = list(_JSON_RE.finditer(text or ""))
+    for match in reversed(matches):
+        try:
+            obj = json.loads(match.group(0))
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    return None

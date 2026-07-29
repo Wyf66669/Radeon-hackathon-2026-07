@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from src.privacy.guard import redact_text
 
 
 class SessionMemory:
@@ -13,24 +16,47 @@ class SessionMemory:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._data: dict[str, Any] = {"notes": [], "facts": [], "history": []}
+        self._lock = threading.RLock()
         self.load()
 
     def load(self) -> None:
-        if self.path.exists():
-            self._data = json.loads(self.path.read_text(encoding="utf-8"))
+        if not self.path.exists():
+            return
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                self._data = raw
+                self._data.setdefault("notes", [])
+                self._data.setdefault("facts", [])
+                self._data.setdefault("history", [])
+        except (json.JSONDecodeError, OSError, TypeError):
+            # Corrupt memory must not crash demos — quarantine and start clean.
+            bak = self.path.with_suffix(self.path.suffix + ".corrupt")
+            try:
+                self.path.replace(bak)
+            except OSError:
+                pass
+            self._data = {"notes": [], "facts": [], "history": []}
 
     def save(self) -> None:
-        self.path.write_text(json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self._lock:
+            tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+            tmp.write_text(json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(self.path)
 
     def add_note(self, note: str) -> str:
-        item = {"ts": datetime.now().isoformat(timespec="seconds"), "note": note}
-        self._data.setdefault("notes", []).append(item)
+        safe, _ = redact_text(note)
+        item = {"ts": datetime.now().isoformat(timespec="seconds"), "note": safe}
+        with self._lock:
+            self._data.setdefault("notes", []).append(item)
         self.save()
         return f"Saved note ({len(self._data['notes'])} total)."
 
     def add_fact(self, fact: str) -> str:
-        item = {"ts": datetime.now().isoformat(timespec="seconds"), "fact": fact}
-        self._data.setdefault("facts", []).append(item)
+        safe, _ = redact_text(fact)
+        item = {"ts": datetime.now().isoformat(timespec="seconds"), "fact": safe}
+        with self._lock:
+            self._data.setdefault("facts", []).append(item)
         self.save()
         return f"Saved fact ({len(self._data['facts'])} total)."
 
@@ -44,11 +70,12 @@ class SessionMemory:
         return "\n".join(lines)
 
     def append_history(self, role: str, content: str) -> None:
-        self._data.setdefault("history", []).append(
-            {"ts": datetime.now().isoformat(timespec="seconds"), "role": role, "content": content}
-        )
-        # Keep history bounded for privacy / disk size
-        self._data["history"] = self._data["history"][-100:]
+        safe, _ = redact_text(content)
+        with self._lock:
+            self._data.setdefault("history", []).append(
+                {"ts": datetime.now().isoformat(timespec="seconds"), "role": role, "content": safe}
+            )
+            self._data["history"] = self._data["history"][-100:]
         self.save()
 
     def recent_turns(self, limit: int = 8) -> list[dict[str, str]]:

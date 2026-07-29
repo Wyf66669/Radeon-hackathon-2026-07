@@ -40,12 +40,16 @@ class LocalTransformersBackend(LLMBackend):
         self.cfg = cfg
         dtype = torch.float16 if cfg.dtype == "float16" else torch.bfloat16
         mid = cfg.local_model_id
-        print(f"[llm] loading tokenizer: {mid}", flush=True)
-        self.tokenizer = self._from_pretrained(AutoTokenizer, mid, trust_remote_code=True)
+        trust = os.getenv("PLA_TRUST_REMOTE_CODE", "0").lower() in {"1", "true", "yes"}
+        # Qwen-family often needs trust_remote_code; allow known prefixes by default.
+        if any(mid.lower().startswith(p) for p in ("qwen/", "qwen2", "qwen2.5")):
+            trust = True
+        print(f"[llm] loading tokenizer: {mid} (trust_remote_code={trust})", flush=True)
+        self.tokenizer = self._from_pretrained(AutoTokenizer, mid, trust_remote_code=trust)
 
         load_kwargs: dict[str, Any] = {
             "torch_dtype": dtype,
-            "trust_remote_code": True,
+            "trust_remote_code": trust,
             "low_cpu_mem_usage": True,
         }
         if torch.cuda.is_available():

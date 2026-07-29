@@ -40,10 +40,18 @@ class Skill:
 
 def write_tree(base: Path, tree: dict[str, str]) -> list[str]:
     """Write relative path -> content mapping under base. Returns written paths."""
+    from src.security.paths import is_under
+
     written: list[str] = []
+    base = base.resolve()
     base.mkdir(parents=True, exist_ok=True)
     for rel, content in tree.items():
-        path = base / rel
+        rel_norm = str(rel).replace("\\", "/").lstrip("/")
+        if ".." in Path(rel_norm).parts:
+            continue
+        path = (base / rel_norm).resolve()
+        if not is_under(path, base):
+            continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         written.append(str(path))

@@ -43,8 +43,13 @@ def is_image_path(path: Path | str) -> bool:
 def _open_image(path: Path) -> tuple[Any, int, int]:
     from PIL import Image
 
+    # Mitigate decompression bombs
+    Image.MAX_IMAGE_PIXELS = 25_000_000
     img = Image.open(path)
+    img.load()
     img = img.convert("RGB")
+    if img.width * img.height > 25_000_000:
+        raise ValueError("image too large")
     return img, img.width, img.height
 
 

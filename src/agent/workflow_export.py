@@ -115,12 +115,18 @@ def export_workflow(
     out_dir: Path | None = None,
 ) -> dict[str, str]:
     """Export a registered workflow to one or more formats; return path map."""
+    from src.security.paths import is_under, sanitize_id
+
     reg = get_registry()
-    wf = reg.get(workflow_id)
+    safe_id = sanitize_id(workflow_id, "workflow")
+    wf = reg.get(safe_id) or reg.get(workflow_id)
     if not wf:
         raise KeyError(f"unknown workflow: {workflow_id}")
     fmts = formats or ["yaml", "json", "dify", "langchain"]
-    base = out_dir or (export_dir() / workflow_id)
+    root = export_dir().resolve()
+    base = (Path(out_dir).resolve() if out_dir else (root / safe_id))
+    if not is_under(base, root):
+        base = root / safe_id
     base.mkdir(parents=True, exist_ok=True)
     written: dict[str, str] = {}
     for fmt in fmts:
@@ -131,8 +137,7 @@ def export_workflow(
         path = base / filename
         path.write_text(fn(wf), encoding="utf-8")
         written[key] = str(path)
-    # also copy native yaml
-    native = base / f"{workflow_id}.native.yaml"
+    native = base / f"{safe_id}.native.yaml"
     native.write_text(export_generic_yaml(wf), encoding="utf-8")
     written.setdefault("native", str(native))
     return written
