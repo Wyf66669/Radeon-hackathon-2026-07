@@ -57,9 +57,11 @@ Skills (generate real projects): `docs/SKILLS.md` · `python scripts/run_skill.p
 Six apps map: `docs/SIX_APPS.md` · `python scripts/demo_six_apps.py`  
 Doubao-style web + Cloudflare: `docs/CLOUDFLARE_TUNNEL.md` · `python scripts/run_cloudflare_tunnel.py`  
 **Fallback:** `python scripts/demo_cli.py`.  
-Details: `docs/RADEON_CLOUD_RUN.md` · Checklist: `docs/SUBMISSION_CHECKLIST.md` · PR text: `docs/PR_BODY.md`
+Details: `START_HERE.md` · `docs/JUDGE_DEMO.md` · Checklist: `docs/SUBMISSION_CHECKLIST.md` · PR text: `docs/PR_BODY.md`
 
 **Cloud backup (before 2026-07-31 18:00):** `python scripts/backup_to_persistence.py` then `git push`.
+
+**Judge one-shot:** `bash scripts/start_for_judge.sh`（与 Demo 视频 / 网页推荐问题一致）
 
 Get a free Model API key from:
 https://developer.amd.com.cn/radeon/modelapis

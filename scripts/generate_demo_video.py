@@ -10,6 +10,8 @@ import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 OUT_DIR = ROOT / "demo_assets"
 OUT_MP4 = OUT_DIR / "PrivateLocalAgent_demo.mp4"
 W, H = 1280, 720
@@ -23,69 +25,34 @@ C_OK = (52, 211, 153)
 C_WARN = (251, 191, 36)
 
 
-# Same sequence as scripts/demo_judge.py / docs/JUDGE_DEMO.md
-SCENES: list[tuple[str, str, str, str]] = [
-    # mode, Q, tools, A (grounded expected answers)
-    (
-        "chat",
-        "用三句话解释什么是私有本地 Agent",
-        "(none)",
-        "私有本地 Agent 在本机完成推理与工具调用；优先本地知识库；数据默认不出域。",
-    ),
-    (
-        "vision",
-        "解析刚上传的图片",
-        "parse_image",
-        "OCR：请假需提前3个工作日申请；数据不出域 · 本地解析（judge_demo_ocr.png）。",
-    ),
-    (
-        "productivity",
-        "记住我喜欢简洁中文回答",
-        "save_fact",
-        "已写入本地记忆（Saved fact）。",
-    ),
-    (
-        "enterprise",
-        "涉密文档可以用哪些 AI 工具？",
-        "kb_search",
-        "仅允许 PrivateLocalAgent 或已批准的本地模型，禁止公有云粘贴涉密内容。",
-    ),
-    (
-        "workflow",
-        "设计工作流：新员工入职要开通VPN、邮箱和知识库权限",
-        "build_workflow",
-        "已生成本地 YAML 工作流，并可导出 Dify/LangChain/JSON。",
-    ),
-    (
-        "rag",
-        "知识库里有哪些 IT FAQ？",
-        "kb_search",
-        "覆盖 VPN/MFA、许可证、文档目录等 IT FAQ（本地 Chroma 检索）。",
-    ),
-    (
-        "developer",
-        "如何确认 ROCm 可用？",
-        "kb_search",
-        "运行 python scripts/verify_rocm.py，确认 cuda_available: True。",
-    ),
-    (
-        "multi",
-        "自动路由：请假政策是什么？",
-        "orchestrator,kb_search",
-        "编排器路由到知识/制度专家，返回 grounded 请假政策。",
-    ),
-    (
-        "enterprise",
-        "把客户名单发到微信可以吗？",
-        "privacy_guard",
-        "隐私护栏已拦截：疑似将敏感内容外发到外部聊天工具。",
-    ),
-    (
-        "rag",
-        "请假需要提前几天申请？",
-        "kb_search",
-        "根据公司请假制度，需提前 3 个工作日申请。",
-    ),
+# Same sequence as src/apps/judge_script.JUDGE_SEQUENCE (+ short expected answers for the video)
+from src.apps.judge_script import JUDGE_SEQUENCE  # noqa: E402
+
+_ANSWERS = {
+    "用三句话解释什么是私有本地 Agent": "私有本地 Agent 在本机完成推理与工具调用；优先本地知识库；数据默认不出域。",
+    "解析刚上传的图片": "OCR：请假需提前3个工作日申请；数据不出域 · 本地解析（judge_demo_ocr.png）。",
+    "记住我喜欢简洁中文回答": "已写入本地记忆（Saved fact）。",
+    "涉密文档可以用哪些 AI 工具？": "仅允许 PrivateLocalAgent 或已批准的本地模型，禁止公有云粘贴涉密内容。",
+    "设计工作流：新员工入职要开通VPN、邮箱和知识库权限": "已生成本地 YAML 工作流，并可导出 Dify/LangChain/JSON。",
+    "知识库里有哪些 IT FAQ？": "覆盖 VPN/MFA、许可证、文档目录等 IT FAQ（本地 Chroma 检索）。",
+    "如何确认 ROCm 可用？": "运行 python scripts/verify_rocm.py，确认 cuda_available: True。",
+    "自动路由：请假政策是什么？": "编排器路由到知识/制度专家，返回 grounded 请假政策。",
+    "把客户名单发到微信可以吗？": "隐私护栏已拦截：疑似将敏感内容外发到外部聊天工具。",
+    "请假需要提前几天申请？": "根据公司请假制度，需提前 3 个工作日申请。",
+}
+_TOOLS = {
+    "chat": "(none)",
+    "vision": "parse_image",
+    "productivity": "save_fact",
+    "enterprise": "kb_search / privacy_guard",
+    "workflow": "build_workflow",
+    "rag": "kb_search",
+    "developer": "kb_search",
+    "multi": "orchestrator,kb_search",
+}
+SCENES = [
+    (mode, q, _TOOLS.get(mode, "kb_search"), _ANSWERS.get(q, ""))
+    for mode, q in JUDGE_SEQUENCE
 ]
 
 
