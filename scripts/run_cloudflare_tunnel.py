@@ -150,6 +150,8 @@ def main() -> None:
         raise SystemExit(str(exc)) from exc
 
     print("[cloudflare] quick tunnel (no login). Public URL prints below.")
+    print("[cloudflare] >>> 打开网页: 使用下方 https://xxxx.trycloudflare.com")
+    print("[cloudflare] >>> 页面左侧「评委清单」与 Demo 视频同一套问题")
     print("[cloudflare] Keep this terminal open while demoing.")
     try:
         subprocess.call([cf, "tunnel", "--url", f"http://127.0.0.1:{PORT}"])

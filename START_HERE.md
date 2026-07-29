@@ -4,7 +4,31 @@
 
 - **视频：** https://github.com/Wyf66669/Radeon-hackathon-2026-07/releases/download/demo-v1/PrivateLocalAgent_demo.mp4  
 - **PR：** https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/40  
-- **详细：** `docs/JUDGE_DEMO.md`
+
+---
+
+## 打开什么网页？
+
+| 场景 | 打开这个地址 |
+|------|----------------|
+| **本机 Windows** | **http://127.0.0.1:7900** |
+| **Radeon Cloud + 隧道** | 终端打印的 **`https://xxxx.trycloudflare.com`** |
+
+本机一键（会自动开浏览器）：
+
+```bat
+scripts\start_web.bat
+```
+
+云上一键网页：
+
+```bash
+bash scripts/start_for_judge.sh
+PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py
+# 然后打开终端里出现的 https://xxxx.trycloudflare.com
+```
+
+网页左侧「评委清单」#1→#10 = 视频同款问题。
 
 ---
 

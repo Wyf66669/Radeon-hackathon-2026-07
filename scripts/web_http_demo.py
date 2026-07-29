@@ -694,13 +694,24 @@ def main() -> None:
         host = "127.0.0.1"
     port = int(os.getenv("HTTP_PORT", "7900"))
     _new_session(DEFAULT_MODE)
-    print(f"Studio UI: http://127.0.0.1:{port} (bind={host})")
+    print("=" * 60, flush=True)
+    print("PrivateLocalAgent Web UI", flush=True)
+    print(f">>> 打开网页: http://127.0.0.1:{port}", flush=True)
+    print(">>> 启动说明: START_HERE.md", flush=True)
+    print(">>> 评委清单在页面左侧（与 Demo 视频同一套问题）", flush=True)
+    print("=" * 60, flush=True)
     if DEMO_TOKEN:
         print("[security] PLA_DEMO_TOKEN enabled — send header X-PLA-Token on API calls")
-    else:
-        print("[security] tip: set PLA_DEMO_TOKEN for tunnel demos")
-    print("Cloudflare: PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py")
+    if allow_public:
+        print("[security] PLA_ALLOW_PUBLIC=1 — also use Cloudflare URL from run_cloudflare_tunnel.py")
     ensure_runtime_async()
+    if os.getenv("PLA_OPEN_BROWSER", "1").lower() in {"1", "true", "yes"} and host in {"127.0.0.1", "localhost"}:
+        try:
+            import webbrowser
+
+            webbrowser.open(f"http://127.0.0.1:{port}")
+        except Exception:
+            pass
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
