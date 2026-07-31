@@ -37,8 +37,8 @@ copy .env.example .env   # Windows
 # 4) ingest sample docs
 python scripts/ingest_sample.py
 
-# 5a) recommended on Radeon Cloud: Jupyter visual demo (NO tunnel)
-#    open notebooks/private_agent_demo.ipynb → Restart → Run the single cell
+# 5a) recommended on Radeon Cloud: Jupyter visual demo (one cell + rc-tunnel)
+#    open notebooks/visual_no_tunnel.ipynb → Restart → Run the single cell
 
 # 5b) CLI demo (RAG + memory + workflow + multi-agent)
 python scripts/demo_cli.py
@@ -75,7 +75,7 @@ track2-private-local-agent/
 ├── configs/default.yaml
 ├── data/sample_docs/
 ├── notebooks/
-│   └── private_agent_demo.ipynb   # tunnel-free visual chat (primary demo)
+│   └── visual_no_tunnel.ipynb     # primary demo: one cell + real agent + rc-tunnel
 ├── docs/
 │   ├── PROJECT_SPECIFICATION.md
 │   ├── ARCHITECTURE.md

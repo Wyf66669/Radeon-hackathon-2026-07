@@ -57,22 +57,22 @@ Add the three `export` lines to every new terminal session (or put them in `~/.b
 
 ---
 
-## Primary demo (recommended, no tunnel)
+## Primary demo (recommended)
 
-JupyterLab notebook UI — no `rc-tunnel`, no `/proxy`:
+JupyterLab one-cell boot → real agent UI → official Radeon `rc-tunnel`:
 
 ```bash
 cd /workspace/Radeon-hackathon-2026-07
-git pull origin track2-private-local-agent
+bash scripts/prep_and_run_notebook.sh
 export PLA_DATA_ROOT=/workspace/persistence/PrivateLocalAgent
 export HF_HOME=/workspace/persistence/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
-1. Open `notebooks/private_agent_demo.ipynb`
+1. Open `notebooks/visual_no_tunnel.ipynb`
 2. **Kernel → Restart Kernel**
 3. Run the **single** code cell
-4. Wait for `ready` + chat panel → click **发送**
+4. Wait for `ready` + Public URL → use sidebar「评委清单 · 10 问」
 
 Optional: expand KB to ~10k related FAQs first:
 

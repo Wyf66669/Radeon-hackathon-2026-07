@@ -68,7 +68,7 @@ def main() -> None:
         _run(orch, mode, q)
 
     print("\n[ok] judge demo finished — all modes exercised")
-    print("Web (same prompts): PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py")
+    print("Web (same prompts): notebooks/visual_no_tunnel.ipynb → one cell + rc-tunnel")
     print("Guide: START_HERE.md")
 
 

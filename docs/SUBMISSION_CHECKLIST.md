@@ -41,7 +41,7 @@ PR draft text: `docs/PR_BODY.md`
 - [x] Instance: AMD OneClick Base (ROCm)
 - [x] Local Transformers backend on GPU
 - [x] CLI demo (`scripts/demo_cli.py`)
-- [x] Notebook one-cell visual chat (no tunnel)
+- [x] Notebook one-cell visual chat (real agent + rc-tunnel)
 - [x] Mandatory `kb_search` + Chinese grounded answers
 - [x] Demo video uploaded + linked in PR
 - [x] PR opened to `AMD-DEV-CONTEST/Radeon-hackathon-2026-07` (#40)

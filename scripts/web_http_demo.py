@@ -20,7 +20,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.apps.modes import DEFAULT_MODE, UI_MODES, get_app_mode
-from src.apps.judge_script import prompts_for_mode
+from src.apps.judge_script import VIDEO_URL, PR_URL, judge_checklist_html_rows, prompts_for_mode
+from src.rag.lazy_store import LazyVectorStore
 
 SESSIONS: dict[str, dict] = {}
 CURRENT_ID = ""
@@ -32,47 +33,6 @@ ORCH = None
 UPLOAD_DIR: Path | None = None
 _lock = threading.Lock()
 _MODE_IDS = {m.id for m in UI_MODES}
-
-
-class LazyVectorStore:
-    def __init__(self, settings) -> None:
-        self._settings = settings
-        self._inner = None
-        self._lock = threading.Lock()
-
-    def _get(self):
-        if self._inner is not None:
-            return self._inner
-        with self._lock:
-            if self._inner is not None:
-                return self._inner
-            from src.rag.store import VectorStore
-
-            print("[boot] loading knowledge base embedder (background/first use)...", flush=True)
-            store = VectorStore(self._settings)
-            sample = self._settings.resolve(self._settings.paths.sample_docs)
-            store.ensure_sample_docs(sample)
-            self._inner = store
-            print("[boot] knowledge base ready", flush=True)
-            return self._inner
-
-    def warm(self) -> None:
-        try:
-            self._get()
-        except Exception as exc:  # noqa: BLE001
-            print(f"[boot] kb warm failed: {exc}", flush=True)
-
-    def search(self, *args, **kwargs):
-        return self._get().search(*args, **kwargs)
-
-    def count(self) -> int:
-        return self._get().count()
-
-    def add_directory(self, *args, **kwargs):
-        return self._get().add_directory(*args, **kwargs)
-
-    def add_file(self, *args, **kwargs):
-        return self._get().add_file(*args, **kwargs)
 
 
 def _new_session(mode: str = DEFAULT_MODE) -> str:
@@ -198,10 +158,30 @@ def page(notice: str = "", q: str = "") -> bytes:
     if not hist_items:
         hist_items.append('<div class="nav muted">暂无对话记录</div>')
 
+    guide_rows = []
+    for i, (mid, label, prompt) in enumerate(judge_checklist_html_rows(), 1):
+        guide_rows.append(
+            f'<div class="gitem">'
+            f'<button type="button" class="ggo" data-mode="{html.escape(mid)}" '
+            f'data-q="{html.escape(prompt, quote=True)}">'
+            f'{i}. {html.escape(label)}</button>'
+            f'<div class="gq">{html.escape(prompt)}</div></div>'
+        )
+    guide_block = (
+        '<h3>评委清单 · 10 问</h3>'
+        '<p class="gtip">与 Demo 视频同一套；点击切换模式并发送</p>'
+        f'<div class="guide">{"".join(guide_rows)}</div>'
+        f'<p class="glink"><a href="{html.escape(VIDEO_URL)}" target="_blank" rel="noopener">Demo 视频</a>'
+        f' · <a href="{html.escape(PR_URL)}" target="_blank" rel="noopener">PR #40</a></p>'
+    )
+
     if not READY:
-        status = notice or ("模型加载中，请稍候自动刷新…" if LOADING else "正在准备模型…")
         if LOAD_ERROR:
-            status = "模型加载失败，请查看终端日志后重试。"
+            status = "服务启动失败，请查看 Notebook/终端日志后 Restart Kernel 重试。"
+        elif LOADING:
+            status = "智能体加载中，页面将自动刷新…"
+        else:
+            status = notice or "正在准备智能体…"
         stage = (
             f'<div class="hero"><h1>PrivateLocalAgent</h1>'
             f'<p>{html.escape(status)}</p></div>'
@@ -310,6 +290,7 @@ a.skill.on{{background:var(--soft);color:var(--accent);font-weight:700}}
   <aside class="side">
     <div class="brand">PrivateLocalAgent<small>Track 2 · 私有本地 Agent</small></div>
     <a class="btn-new" href="?new=1">＋ 新对话</a>
+    {guide_block}
     <h3>对话记录</h3>
     {''.join(hist_items)}
   </aside>
@@ -382,10 +363,15 @@ async function sendText(text) {{
       headers: {{'Content-Type': 'application/json'}},
       body: JSON.stringify({{sid, mode, q}})
     }});
-    const data = await res.json();
+    let data = {{}};
+    try {{ data = await res.json(); }} catch (_) {{}}
+    if (!res.ok) {{
+      last.textContent = data.error || ('请求失败 (' + res.status + ')，请重试');
+      return;
+    }}
     last.textContent = data.answer || data.error || '无回复';
   }} catch (e) {{
-    last.textContent = '发送失败，请重试';
+    last.textContent = '发送失败，请重试（网络或隧道可能未就绪）';
   }}
 }}
 document.getElementById('send').onclick = () => sendText();
@@ -674,7 +660,7 @@ def main() -> None:
     if DEMO_TOKEN:
         print("[security] PLA_DEMO_TOKEN enabled — send header X-PLA-Token on API calls")
     if allow_public:
-        print("[security] PLA_ALLOW_PUBLIC=1 — also use Cloudflare URL from run_cloudflare_tunnel.py")
+        print("[security] PLA_ALLOW_PUBLIC=1 — prefer Radeon rc-tunnel (see START_HERE.md)")
     ensure_runtime_async()
     if os.getenv("PLA_OPEN_BROWSER", "1").lower() in {"1", "true", "yes"} and host in {"127.0.0.1", "localhost"}:
         try:

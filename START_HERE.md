@@ -21,9 +21,9 @@ notebooks/visual_no_tunnel.ipynb
 4. 只运行 **那一个代码单元格** → 等到：
    - 终端出现 `ready` / `agent web ready … (orch attached)`  
    - 页面出现 **PrivateLocalAgent** 完整界面（iframe）+ 公网链接 `https://rc-*.radeon.firstdg.ai`  
-5. 在界面里选模式、点推荐问题、或上传图片测试（与 Demo 视频同一套）
+5. 在界面**左侧「评委清单 · 10 问」**点题（与 Demo 视频同一套），或上传图片测试
 
-本单元格会：加载真实本地智能体 → 启动 Doubao 风网页 → 官方 **`rc-tunnel`** 公网暴露 → 本页嵌入。
+本单元格会：加载真实本地智能体 → 启动 Doubao 风网页（含评委清单）→ 官方 **`rc-tunnel`** 公网暴露 → 本页嵌入。
 
 若云上代码偏旧，Terminal 先跑：
 

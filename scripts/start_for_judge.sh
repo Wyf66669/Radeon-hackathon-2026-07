@@ -26,4 +26,5 @@ python scripts/demo_judge.py
 
 echo
 echo "Web UI (same prompts as video):"
-echo "  PLA_ALLOW_PUBLIC=1 python scripts/run_cloudflare_tunnel.py"
+echo "  Open Notebook → notebooks/visual_no_tunnel.ipynb → Restart → run the ONE code cell"
+echo "  (real agent + official rc-tunnel; see START_HERE.md)"

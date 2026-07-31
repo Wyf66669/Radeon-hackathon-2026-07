@@ -218,53 +218,76 @@ def ensure_rc_tunnel_installed() -> str | None:
     return _rc_tunnel_bin()
 
 
-def expose_rc_tunnel(port: int) -> str | None:
+def _parse_rc_url(text: str) -> str | None:
+    m = re.search(r"https?://[^\s]*radeon\.firstdg\.ai[^\s]*", text or "")
+    if not m:
+        return None
+    url = m.group(0).rstrip("/")
+    if url.startswith("http://"):
+        url = "https://" + url[len("http://") :]
+    return url
+
+
+def expose_rc_tunnel(port: int, retries: int = 2) -> str | None:
     """Expose local agent web via official Radeon rc-tunnel. Returns public https URL."""
     if not _healthz(port):
         raise RuntimeError(f"refuse expose: local :{port} /healthz not ok")
     bin_path = ensure_rc_tunnel_installed()
     if not bin_path:
         return None
-    subprocess.run([bin_path, "stop"], check=False, capture_output=True, text=True, timeout=60)
-    time.sleep(0.5)
-    proc = subprocess.run(
-        [bin_path, "expose", "--port", str(port)],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    print(out, flush=True)
-    m = re.search(r"https?://[^\s]*radeon\.firstdg\.ai[^\s]*", out)
-    if not m:
-        # quarantine may keep previous domain — ask status
-        st = subprocess.run([bin_path, "status"], check=False, capture_output=True, text=True, timeout=30)
-        out2 = (st.stdout or "") + "\n" + (st.stderr or "")
-        print(out2, flush=True)
-        m = re.search(r"https?://[^\s]*radeon\.firstdg\.ai[^\s]*", out2)
-    if not m:
-        return None
-    url = m.group(0).rstrip("/")
-    if url.startswith("http://"):
-        url = "https://" + url[len("http://") :]
-    _PUBLIC_URLS[port] = url
-    # wait until public responds (best-effort)
-    for _ in range(20):
-        try:
-            with urllib.request.urlopen(url + "/healthz", timeout=3) as r:
-                if b"ok" in r.read().lower():
-                    break
-        except Exception:
-            time.sleep(0.5)
-    print(f"[ui] public={url}", flush=True)
-    return url
+
+    last_out = ""
+    for attempt in range(1, max(1, retries) + 1):
+        subprocess.run([bin_path, "stop"], check=False, capture_output=True, text=True, timeout=60)
+        time.sleep(0.5)
+        proc = subprocess.run(
+            [bin_path, "expose", "--port", str(port)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        last_out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+        print(f"[ui] rc-tunnel expose attempt {attempt}:\n{last_out}", flush=True)
+        url = _parse_rc_url(last_out)
+        if not url:
+            st = subprocess.run([bin_path, "status"], check=False, capture_output=True, text=True, timeout=30)
+            status_out = (st.stdout or "") + "\n" + (st.stderr or "")
+            print(status_out, flush=True)
+            url = _parse_rc_url(status_out)
+        if not url:
+            continue
+        ok_public = False
+        for _ in range(20):
+            try:
+                with urllib.request.urlopen(url + "/healthz", timeout=3) as r:
+                    if b"ok" in r.read().lower():
+                        ok_public = True
+                        break
+            except Exception:
+                time.sleep(0.5)
+        if ok_public or attempt >= retries:
+            _PUBLIC_URLS[port] = url
+            print(f"[ui] public={url} healthz={'ok' if ok_public else 'pending'}", flush=True)
+            return url
+    print("[ui] rc-tunnel failed after retries — use local iframe", flush=True)
+    return None
 
 
 def display_agent_ui(local_url: str, public_url: str | None) -> None:
     from IPython.display import HTML, clear_output, display
 
+    # Prefer public when available; always keep local as fallback link.
     embed = public_url or local_url
+    warn = ""
+    if not public_url:
+        warn = (
+            '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;'
+            'background:#422006;border:1px solid #f59e0b;color:#fde68a;font-size:13px">'
+            "公网 rc-tunnel 暂不可用：请用下方嵌入页测试。若空白，先确认本机链接 /healthz，"
+            "或 Terminal 执行 <code>bash scripts/prep_and_run_notebook.sh</code> 后重跑单元格。"
+            "</div>"
+        )
     clear_output(wait=True)
     display(
         HTML(
@@ -274,10 +297,12 @@ def display_agent_ui(local_url: str, public_url: str | None) -> None:
     <b style="color:#99f6e4;font-size:20px">PrivateLocalAgent</b>
     <span style="color:#94a3b8;margin-left:8px">真实智能体 · 本地推理 · 可上传</span>
     <div style="margin-top:8px;font-size:13px;line-height:1.7">
-      <a href="{escape(embed)}" target="_blank" rel="noopener" style="color:#5eead4">打开外部完整界面</a>
+      <a href="{escape(embed)}" target="_blank" rel="noopener" style="color:#5eead4">打开完整界面</a>
       &nbsp;|&nbsp; 本机 <code style="color:#fbbf24">{escape(local_url)}</code>
       {f'&nbsp;|&nbsp; 公网 <code style="color:#fbbf24">{escape(public_url)}</code>' if public_url else ''}
     </div>
+    <div style="margin-top:6px;font-size:12px;color:#94a3b8">左侧「评委清单 · 10 问」与 Demo 视频同一套问题</div>
+    {warn}
   </div>
   <iframe src="{escape(embed)}" title="PrivateLocalAgent"
     style="width:100%;height:800px;border:1px solid #334155;border-radius:14px;background:#0b1220"></iframe>
